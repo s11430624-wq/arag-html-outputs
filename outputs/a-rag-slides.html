@@ -1,0 +1,4391 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW" data-theme="light">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A-RAG: Scaling Agentic Retrieval-Augmented Generation via Hierarchical Retrieval Interfaces</title>
+  <!-- 導入高質感 Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap"
+    rel="stylesheet">
+
+  <style>
+    /* CSS 設計系統與變數 */
+    :root {
+      /* 亮色主題 - 學術優雅 */
+      --bg-global: #f1f5f9;
+      --bg-slide: #ffffff;
+      --bg-sidebar: rgba(255, 255, 255, 0.95);
+      --bg-drawer: rgba(255, 255, 255, 0.98);
+      --bg-panel: #f8fafc;
+      --bg-panel2: #edf2f7;
+      --bg-hud: rgba(255, 255, 255, 0.85);
+      --border-color: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #64748b;
+      --accent-cyan: #0891b2;
+      --accent-blue: #2563eb;
+      --accent-green: #16a34a;
+      --accent-yellow: #ca8a04;
+      --accent-orange: #ea580c;
+      --accent-red: #dc2626;
+      --accent-purple: #7c3aed;
+      --glow-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --glass-blur: blur(16px);
+      --active-glow: rgba(8, 145, 178, 0.28);
+    }
+
+    [data-theme="dark"] {
+      /* 暗色主題 - 科技極客 */
+      --bg-global: #020617;
+      --bg-slide: #090d16;
+      --bg-sidebar: rgba(15, 23, 42, 0.95);
+      --bg-drawer: rgba(15, 23, 42, 0.98);
+      --bg-panel: rgba(30, 41, 59, 0.4);
+      --bg-panel2: rgba(30, 41, 59, 0.7);
+      --bg-hud: rgba(15, 23, 42, 0.85);
+      --border-color: rgba(148, 163, 184, 0.15);
+      --text-primary: #f8fafc;
+      --text-muted: #cbd5e1;
+      --text-dim: #94a3b8;
+      --accent-cyan: #00f0ff;
+      --accent-blue: #38bdf8;
+      --accent-green: #4ade80;
+      --accent-yellow: #facc15;
+      --accent-orange: #fb923c;
+      --accent-red: #f87171;
+      --accent-purple: #c084fc;
+      --glow-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+      --card-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+      --active-glow: rgba(0, 240, 255, 0.45);
+    }
+
+    /* 基礎重設 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+      background-color: var(--bg-global);
+      color: var(--text-primary);
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: background-color 0.5s ease, color 0.5s ease;
+      cursor: url('Cutecore Pink Arrow--cursor--SweezyCursors..cur'), default;
+    }
+
+    /* 所有可點擊與互動元素的可愛手勢指針樣式 */
+    a,
+    button,
+    .hud-btn,
+    .sidebar-item,
+    .zoom-close,
+    [onclick],
+    [role="button"],
+    label,
+    input[type="button"],
+    input[type="submit"] {
+      cursor: url('Cutecore Pink Arrow--pointer--SweezyCursors..cur'), pointer !important;
+    }
+
+    /* 16:9 簡報沙盒容器 */
+    .presentation-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide-sandbox {
+      width: 1200px;
+      height: 675px;
+      /* 16:9 完美比例 */
+      background-color: var(--bg-slide);
+      position: relative;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      overflow: hidden;
+      transform-origin: center center;
+      transition: background-color 0.5s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s ease;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--border-color);
+    }
+
+    /* 裝飾線條 - 左側漸變豎條 */
+    .deck-accent-bar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 8px;
+      height: 100%;
+      background: linear-gradient(180deg, var(--accent-cyan), var(--accent-blue), var(--accent-purple));
+      z-index: 10;
+      transition: background 0.5s ease;
+    }
+
+    /* 簡報頂部頁首與頁尾 */
+    .slide-header {
+      height: 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 40px 0 48px;
+      border-bottom: 1px solid var(--border-color);
+      z-index: 5;
+    }
+
+    .slide-header .logo {
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .slide-header .logo::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan);
+    }
+
+    .slide-header .page-num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    /* 第 30 頁特殊模式：跳出 16:9 沙盒，直接顯示完整外部頁面 */
+    .special-page-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: #ffffff;
+      display: none;
+    }
+
+    .special-page-overlay.active {
+      display: block;
+    }
+
+    .special-page-frame {
+      width: 100vw;
+      height: 100vh;
+      border: 0;
+      display: block;
+      background: #ffffff;
+    }
+
+    .special-page-back {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 2100;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    .slide-body {
+      flex: 1;
+      padding: 30px 48px 40px 48px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 投影片標題與 Claim */
+    .slide-title-area {
+      margin-bottom: 24px;
+    }
+
+    .slide-title-area h2 {
+      font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .slide-title-area .claim {
+      font-size: 14px;
+      color: var(--text-muted);
+      font-weight: 400;
+      border-left: 3px solid var(--accent-cyan);
+      padding-left: 10px;
+      line-height: 1.4;
+    }
+
+    /* 投影片切換系統 */
+    .slides-wrapper {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+    }
+
+    .slide {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(30px);
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+      z-index: 2;
+    }
+
+    .slide.previous-exit {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+
+    /* 動態面板與卡片 */
+    .panel {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px 20px;
+      box-shadow: var(--glow-shadow);
+      transition: all 0.3s ease;
+    }
+
+    .panel:hover {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04), 0 0 20px var(--active-glow);
+    }
+
+    .panel.panel-accent-cyan {
+      border-left: 4px solid var(--accent-cyan);
+    }
+
+    .panel.panel-accent-blue {
+      border-left: 4px solid var(--accent-blue);
+    }
+
+    .panel.panel-accent-purple {
+      border-left: 4px solid var(--accent-purple);
+    }
+
+    .panel.panel-accent-yellow {
+      border-left: 4px solid var(--accent-yellow);
+    }
+
+    .panel.panel-accent-red {
+      border-left: 4px solid var(--accent-red);
+    }
+
+    .card-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--card-shadow);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08), 0 0 18px var(--active-glow);
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 4px;
+      height: 100%;
+      background-color: var(--border-color);
+      transition: background-color 0.3s ease;
+    }
+
+    .card:hover::before {
+      background-color: var(--accent-cyan);
+    }
+
+    .card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* 清單樣式 */
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bullet-list li {
+      position: relative;
+      padding-left: 20px;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .bullet-list li::before {
+      content: '';
+      position: absolute;
+      left: 4px;
+      top: 7px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: var(--accent-cyan);
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+
+    /* 表格樣式 */
+    .table-container {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--glow-shadow);
+    }
+
+    .premium-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .premium-table th {
+      background-color: var(--bg-panel2);
+      color: var(--text-primary);
+      font-weight: 700;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .premium-table td {
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-muted);
+      background-color: var(--bg-slide);
+      transition: background-color 0.2s ease;
+    }
+
+    .premium-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .premium-table tr:nth-child(even) td {
+      background-color: var(--bg-panel);
+    }
+
+    .premium-table tr:hover td {
+      background-color: var(--active-glow);
+    }
+
+    .premium-table td.strong {
+      font-weight: 700;
+      color: var(--accent-green);
+    }
+
+    /* 懸浮控制 HUD */
+    .hud-controls {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: var(--bg-hud);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--border-color);
+      border-radius: 40px;
+      padding: 8px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      z-index: 100;
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.5s ease, border-radius 0.3s ease, padding 0.3s ease, box-shadow 0.3s ease;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .hud-controls:active {
+      cursor: grabbing;
+    }
+
+    .hud-controls.minimized {
+      width: 48px;
+      height: 48px;
+      padding: 0 !important;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), 0 0 15px var(--active-glow);
+      border-color: var(--accent-cyan);
+    }
+
+    .hud-controls.minimized>*:not(.hud-toggle-minimize-btn) {
+      display: none !important;
+    }
+
+    .hud-controls.minimized .hud-toggle-minimize-btn {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--accent-cyan);
+    }
+
+    .hud-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+
+    .hud-btn:hover {
+      background-color: var(--border-color);
+      color: var(--text-primary);
+      transform: scale(1.05);
+    }
+
+    .hud-btn.active {
+      background-color: var(--accent-cyan);
+      color: #ffffff;
+      box-shadow: 0 0 12px var(--accent-cyan);
+    }
+
+    .hud-divider {
+      width: 1px;
+      height: 20px;
+      background-color: var(--border-color);
+    }
+
+    .hud-controls.dragging {
+      transition: none !important;
+      cursor: grabbing !important;
+    }
+
+    .hud-controls.vertical {
+      flex-direction: column;
+      padding: 24px 8px;
+    }
+
+    .hud-controls.vertical .hud-divider {
+      width: 20px;
+      height: 1px;
+    }
+
+    .hud-progress-info {
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      min-width: 50px;
+      text-align: center;
+    }
+
+    /* 進度條 */
+    .bottom-progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+      transition: width 0.3s ease;
+      z-index: 100;
+    }
+
+    /* 折疊大綱側邊欄 */
+    .sidebar-overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 150;
+      backdrop-filter: blur(2px);
+    }
+
+    .sidebar-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sidebar-index {
+      position: absolute;
+      left: -320px;
+      top: 0;
+      width: 320px;
+      height: 100%;
+      background-color: var(--bg-sidebar);
+      backdrop-filter: var(--glass-blur);
+      border-right: 1px solid var(--border-color);
+      z-index: 160;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 10px 0 30px rgba(0, 0, 0, 0.1);
+      transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .sidebar-index.open {
+      left: 0;
+    }
+
+    .sidebar-index h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 20px;
+      color: var(--text-primary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sidebar-index-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 4px;
+    }
+
+    /* 自定義捲軸 */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 10px;
+    }
+
+    .sidebar-item {
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .sidebar-item:hover {
+      background-color: var(--bg-panel);
+      color: var(--text-primary);
+    }
+
+    .sidebar-item.active {
+      background-color: var(--bg-panel2);
+      color: var(--accent-cyan);
+      font-weight: 700;
+      border-color: var(--border-color);
+      box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.02);
+    }
+
+    .sidebar-item .num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      background-color: var(--bg-panel2);
+      color: var(--text-dim);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .sidebar-item.active .num {
+      background-color: var(--accent-cyan);
+      color: #ffffff;
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+
+    /* 報告人備忘錄抽屜 (Notes Drawer) */
+    .notes-drawer {
+      position: absolute;
+      right: -360px;
+      top: 0;
+      width: 360px;
+      height: 100%;
+      background-color: var(--bg-drawer);
+      backdrop-filter: var(--glass-blur);
+      border-left: 1px solid var(--border-color);
+      z-index: 120;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: -10px 0 30px rgba(0, 0, 0, 0.15);
+      transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .notes-drawer.open {
+      right: 0;
+    }
+
+    .notes-drawer h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 2px solid var(--accent-yellow);
+      padding-bottom: 8px;
+    }
+
+    .notes-content {
+      flex: 1;
+      overflow-y: auto;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      padding-right: 4px;
+    }
+
+    .notes-content strong {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .notes-section {
+      margin-bottom: 20px;
+      background-color: var(--bg-panel);
+      padding: 12px 14px;
+      border-radius: 8px;
+      border-left: 3px solid var(--accent-yellow);
+    }
+
+    .notes-section h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 雷射筆紅點 */
+    .laser-dot {
+      position: fixed;
+      width: 12px;
+      height: 12px;
+      background-color: #ff0055;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 1000;
+      /* 提高 z-index 確保在所有層（包括放大圖片 overlay）的最上方 */
+      box-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055, 0 0 30px #ff0055;
+      opacity: 0;
+      transform: translate(-50%, -50%);
+      transition: opacity 0.2s ease;
+    }
+
+    /* 確保雷射筆開啟時隱藏所有子元素的滑鼠指標 */
+    body.laser-active,
+    body.laser-active * {
+      cursor: none !important;
+    }
+
+    /* 圖片覆蓋層放大 */
+    .zoom-overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(2, 6, 23, 0.95);
+      z-index: 300;
+      opacity: 0;
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px;
+      transition: opacity 0.3s ease;
+      cursor: zoom-out;
+      /* 當游標移入放大背景時，顯示縮小（放大鏡減號）游標 */
+    }
+
+    .zoom-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .zoom-image {
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 8px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      object-fit: contain;
+      cursor: zoom-out;
+      /* 游標移入放大圖片時同樣顯示縮小游標，並支援點擊關閉 */
+    }
+
+    .zoom-close {
+      position: absolute;
+      top: 30px;
+      right: 30px;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      font-size: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: background-color 0.2s;
+    }
+
+    .zoom-close:hover {
+      background-color: rgba(255, 255, 255, 0.25);
+    }
+
+    /* SVG 流程圖專用樣式 */
+    .flow-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .flow-node {
+      fill: var(--bg-panel);
+      stroke: var(--border-color);
+      stroke-width: 1.5;
+      transition: all 0.3s ease;
+    }
+
+    .flow-node:hover {
+      stroke: var(--accent-cyan);
+      filter: drop-shadow(0px 0px 10px var(--active-glow));
+    }
+
+    .flow-text-title {
+      font-weight: 700;
+      font-size: 13px;
+      fill: var(--text-primary);
+    }
+
+    .flow-text-body {
+      font-size: 10px;
+      fill: var(--text-muted);
+    }
+
+    /* 各種投影片專屬版面 */
+    /* Slide 1 - Cover */
+    .cover-layout {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 30px 20px;
+    }
+
+    .cover-header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1.25;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--text-primary) 30%, var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .cover-meta {
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .cover-cards {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 24px;
+      margin: 20px 0;
+    }
+
+    .cover-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--border-color);
+      padding-top: 20px;
+    }
+
+    .cover-presenter {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .cover-context {
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    /* 通用網格排列 */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .grid-3col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    /* Slide 3 Layout */
+    .slide3-content {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 24px;
+      height: 100%;
+      align-items: stretch;
+    }
+
+    .img-preview-box {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      background-color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: var(--glow-shadow);
+      cursor: zoom-in;
+      transition: border-color 0.3s;
+    }
+
+    .img-preview-box:hover {
+      border-color: var(--accent-purple);
+    }
+
+    .img-preview-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .img-zoom-hint {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background-color: rgba(2, 6, 23, 0.7);
+      backdrop-filter: blur(4px);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      opacity: 0.8;
+      transition: opacity 0.2s;
+    }
+
+    .img-preview-box:hover .img-zoom-hint {
+      opacity: 1;
+    }
+
+    /* SVG 流程連線點 */
+    .flow-connector {
+      stroke: var(--text-dim);
+      stroke-width: 1.5;
+      stroke-dasharray: 4, 4;
+      fill: none;
+      marker-end: url(#arrowhead);
+    }
+
+    /* Slide 14 進度條/對比區 */
+    .scaling-bar-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .scaling-bar-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .scaling-bar-label {
+      font-size: 11px;
+      font-weight: 700;
+      min-width: 90px;
+      color: var(--text-primary);
+    }
+
+    .scaling-bar-bg {
+      flex: 1;
+      height: 16px;
+      background-color: var(--bg-panel2);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .scaling-bar-fill {
+      height: 100%;
+      border-radius: 8px;
+      transition: width 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .scaling-bar-value {
+      position: absolute;
+      right: 10px;
+      top: 0;
+      font-family: 'Outfit', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 16px;
+      color: var(--text-primary);
+    }
+
+    .reasoning-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      height: 100%;
+      border-left: 3px solid var(--accent-purple);
+    }
+
+    .reasoning-big-num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin: 8px 0;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 雷射筆紅點 -->
+  <div class="laser-dot" id="laserDot"></div>
+
+  <!-- 圖片放大 overlay -->
+  <div class="zoom-overlay" id="zoomOverlay" onclick="closeZoom()">
+    <button class="zoom-close" onclick="closeZoom()">&times;</button>
+    <img src="assets/page03-embedded.png" alt="Figure 2 Zoomed" class="zoom-image"
+      onclick="event.stopPropagation(); closeZoom();">
+  </div>
+
+  <!-- 大綱側邊欄 -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+  <div class="sidebar-index" id="sidebarIndex">
+    <h3>
+      <span>簡報大綱</span>
+      <button class="hud-btn" style="width: 28px; height: 28px;" onclick="toggleSidebar()">&times;</button>
+    </h3>
+    <ul class="sidebar-index-list" id="sidebarList">
+      <!-- 由 JS 動態填充 -->
+    </ul>
+  </div>
+
+  <!-- 報告人備忘錄抽屜 -->
+  <div class="notes-drawer" id="notesDrawer">
+    <h3>
+      <svg style="width: 18px; height: 18px; fill: currentColor;" viewBox="0 0 24 24">
+        <path
+          d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,19H5V5H19V19M7,7H17V9H7V7M7,11H17V13H7V11M7,15H14V17H7V15Z" />
+      </svg>
+      報告備忘錄 (吳翊銘)
+    </h3>
+    <div class="notes-content" id="notesContent">
+      <!-- 由 JS 根據當前投影片填充 -->
+    </div>
+  </div>
+
+  <!-- 簡報沙盒 -->
+  <div class="presentation-container">
+    <div class="slide-sandbox" id="slideSandbox">
+
+      <!-- 左側漸變條 -->
+      <div class="deck-accent-bar" id="deckAccentBar"></div>
+
+      <!-- 頁首 -->
+      <div class="slide-header">
+        <div class="logo">A-RAG Paper Report</div>
+        <div class="page-num" id="headerPageNum">01 / 30</div>
+      </div>
+
+      <!-- 投影片內容容器 -->
+      <div class="slide-body">
+        <div class="slides-wrapper" id="slidesWrapper">
+
+          <!-- Slide 01: Cover -->
+          <div class="slide active" data-slide-num="1" data-accent="var(--accent-cyan)">
+            <div class="cover-layout">
+              <div class="cover-header">
+                <h1>A-RAG: Scaling Agentic Retrieval-Augmented Generation via Hierarchical Retrieval Interfaces</h1>
+                <div class="cover-meta">Mingxuan Du et al. &middot; arXiv:2602.03442v1 &middot; February 2026</div>
+              </div>
+
+              <div class="cover-cards">
+                <div class="panel panel-accent-cyan">
+                  <h3 style="color: var(--accent-cyan); font-size: 15px; margin-bottom: 8px; font-weight: 700;">報告主題
+                  </h3>
+                  <p style="font-size: 16px; font-weight: 500; line-height: 1.5; color: var(--text-primary);">
+                    Agentic RAG / LLM 架構<br>
+                    層級化檢索介面 (Hierarchical Retrieval)<br>
+                    多跳開放域問答 (Multi-hop Open-domain QA)<br>
+                    測試時計算量擴展 (Test-time Scaling)
+                  </p>
+                </div>
+                <div class="panel" style="background-color: var(--bg-panel2); border-color: var(--border-color);">
+                  <h3 style="color: var(--accent-yellow); font-size: 15px; margin-bottom: 8px; font-weight: 700;">一句話摘要
+                  </h3>
+                  <p style="font-size: 13px; line-height: 1.5;">
+                    A-RAG 將 keyword search、semantic search、chunk read 封裝成層級化介面交給 LLM
+                    agent，讓模型自己動態決定何時檢索、何時深入讀取證據以及何時給出最終回答。
+                  </p>
+                </div>
+              </div>
+
+              <div class="cover-footer">
+                <div class="cover-presenter">報告人：吳翊銘</div>
+                <div class="cover-context">研究所專題討論 &middot; LLM 論文導讀</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 02: Background -->
+          <div class="slide" data-slide-num="2" data-accent="var(--accent-blue)">
+            <div class="slide-title-area">
+              <h2>研究背景：RAG 的角色</h2>
+              <div class="claim">RAG 讓 LLM 在回答時能使用外部知識，但檢索策略會決定答案品質。</div>
+            </div>
+
+            <!-- SVG 流程圖 -->
+            <div style="flex: 1.1; position: relative; margin-bottom: 16px;">
+              <svg class="flow-svg" viewBox="0 0 1100 120">
+                <defs>
+                  <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="var(--text-dim)" />
+                  </marker>
+                </defs>
+                <!-- 流程節點 -->
+                <rect x="20" y="20" width="200" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-blue);" />
+                <text x="120" y="52" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-blue)">User
+                  Query</text>
+                <text x="120" y="76" text-anchor="middle" class="flow-text-body">需要多跳推理或最新資訊的問題</text>
+
+                <path d="M 220,60 L 290,60" class="flow-connector" />
+
+                <rect x="300" y="20" width="210" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-cyan);" />
+                <text x="405" y="52" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-cyan)">Retriever (檢索器)</text>
+                <text x="405" y="76" text-anchor="middle" class="flow-text-body">從知識庫篩選相關段落 / Chunk</text>
+
+                <path d="M 510,60 L 580,60" class="flow-connector" />
+
+                <rect x="590" y="20" width="210" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-yellow);" />
+                <text x="695" y="52" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-yellow)">Context (上下文)</text>
+                <text x="695" y="76" text-anchor="middle" class="flow-text-body">將檢索內容與原始問題拼接成 Prompt</text>
+
+                <path d="M 800,60 L 870,60" class="flow-connector" />
+
+                <rect x="880" y="20" width="200" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-green);" />
+                <text x="980" y="52" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-green)">LLM
+                  Answer (生成回答)</text>
+                <text x="980" y="76" text-anchor="middle" class="flow-text-body">根據上下文生成有依據的答案</text>
+              </svg>
+            </div>
+
+            <div class="grid-2col" style="flex: 1;">
+              <div class="panel">
+                <h3
+                  style="font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                  <span
+                    style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: var(--accent-blue);"></span>
+                  RAG 解決的問題
+                </h3>
+                <ul class="bullet-list">
+                  <li>顯著降低幻覺 (hallucination)，讓生成內容具有可追溯依據。</li>
+                  <li>補足模型訓練後才出現的即時知識或領域特定私有資料。</li>
+                  <li>適合知識密集型任務，如問答、長篇學術研究及企業智能客服。</li>
+                </ul>
+              </div>
+              <div class="panel">
+                <h3
+                  style="font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--accent-yellow); display: flex; align-items: center; gap: 8px;">
+                  <span
+                    style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: var(--accent-yellow);"></span>
+                  但目前 RAG 的瓶頸在於檢索
+                </h3>
+                <ul class="bullet-list">
+                  <li style="--accent-cyan: var(--accent-yellow)">檢索器的錯誤或不相關資訊會直接污染 LLM context。</li>
+                  <li style="--accent-cyan: var(--accent-yellow)">一次性取回過多 token 會造成大模型注意力分散並浪費大量算力。</li>
+                  <li style="--accent-cyan: var(--accent-yellow)">複雜的推理問題通常需要多輪搜尋與逐步尋找實體關聯。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 03: Existing Paradigms -->
+          <div class="slide" data-slide-num="3" data-accent="var(--accent-purple)">
+            <div class="slide-title-area">
+              <h2>傳統 RAG 與現有 Paradigms 對比</h2>
+              <div class="claim">強調三種 paradigm 與真正具備自主策略（Agentic Autonomy）架構之差異。</div>
+            </div>
+
+            <div class="slide3-content">
+              <div class="img-preview-box" onclick="zoomImage()">
+                <img src="assets/page03-embedded.png"
+                  alt="Figure 2 from the A-RAG paper comparing Graph RAG, Workflow RAG, and Agentic RAG">
+                <div class="img-zoom-hint">
+                  <svg style="width:12px; height:12px; fill:currentColor;" viewBox="0 0 24 24">
+                    <path
+                      d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" />
+                  </svg>
+                  點擊全螢幕放大
+                </div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; justify-content:space-between;">
+                <div class="panel panel-accent-purple" style="padding: 14px 18px;">
+                  <h3 style="color: var(--accent-purple); font-size: 15px; margin-bottom: 8px;">Figure 2 分析重點</h3>
+                  <ul class="bullet-list" style="gap: 8px; font-size: 12.5px;">
+                    <li style="--accent-cyan: var(--accent-purple);"><strong>Graph RAG</strong> 與 <strong>Workflow
+                        RAG</strong> 雖然具有多步驟流程，但其策略仍是由系統管線（Pipeline）預先定義，模型只是被動填充。</li>
+                    <li style="--accent-cyan: var(--accent-purple);"><strong>A-RAG (Agentic RAG)</strong> 則將檢索介面直接以 Tool
+                      形式提供給 LLM，讓模型自己規劃搜尋並決定如何前進。</li>
+                    <li style="--accent-cyan: var(--accent-purple);">論文提出自主檢索的三大判準：<br>1. <strong>Autonomous Strategy</strong>
+                      (策略自主)<br>2. <strong>Interleaved Tool Use</strong> (交錯使用工具)<br>3. <strong>Iterative Execution</strong> (迭代執行)</li>
+                  </ul>
+                </div>
+
+                <div class="panel"
+                  style="background-color: var(--bg-panel2); border-color: var(--border-color); padding: 10px 14px;">
+                  <p
+                    style="font-size: 11px; color: var(--text-dim); line-height: 1.4; font-family: 'Outfit', sans-serif;">
+                    Source: Du et al., A-RAG, arXiv:2602.03442v1, Figure 2.<br>
+                    *本投影片使用本機高解析度導出圖像，供論文評鑑使用。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 04: Limitations -->
+          <div class="slide" data-slide-num="4" data-accent="var(--accent-red)">
+            <div class="slide-title-area">
+              <h2>現有方法的核心限制</h2>
+              <div class="claim">問題不是只有檢索器不夠強，而是大語言模型沒有被賦予參與檢索決策的權力。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.4fr 1fr; flex: 1;">
+              <div class="table-container">
+                <table class="premium-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 25%">關鍵限制</th>
+                      <th style="width: 45%">造成的負面影響</th>
+                      <th style="width: 30%">A-RAG 解決方案</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red)">Single-shot retrieval</td>
+                      <td>一次性取回固定 Top-k，無法根據中間推理過程調整搜尋方向。</td>
+                      <td style="font-weight: 600; color: var(--accent-green)">允許 Agent 進行多輪動態搜尋</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red)">Predefined workflow</td>
+                      <td>檢索路徑固定。不論面對簡單或複雜的查詢，都執行相同流程。</td>
+                      <td style="font-weight: 600; color: var(--accent-green)">自主且靈活的動態規劃</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red)">Context overload</td>
+                      <td>大量長 chunk 直接塞入 context，帶來極高的 token 成本與雜訊。</td>
+                      <td style="font-weight: 600; color: var(--accent-green)">先看 Snippet 再決定讀取 Full Chunk</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red)">Poor scaling</td>
+                      <td>隨著模型推理能力變強，被動的檢索管道無法發揮其推理優勢。</td>
+                      <td style="font-weight: 600; color: var(--accent-green)">釋放 Test-time Reasoning 潛力</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-red"
+                style="display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color: var(--accent-red); font-size: 16px; margin-bottom: 12px;">報告時可抓的主軸</h3>
+                  <ul class="bullet-list" style="gap: 12px;">
+                    <li style="--accent-cyan: var(--accent-red)"><strong>檢索不只是「取回更多」：</strong> 關鍵在於何時檢索 (when)、如何檢索
+                      (how) 以及檢索到什麼程度。</li>
+                    <li style="--accent-cyan: var(--accent-red)"><strong>工具介面限制了自主性：</strong> 單一粒度的工具（如只提供 vector
+                      retrieval）限制了 LLM 在不同推理階段的靈活性。</li>
+                    <li style="--accent-cyan: var(--accent-red)">A-RAG 把檢索變成大模型可互動的<strong>多粒度決策問題</strong>。</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 05: Research Question -->
+          <div class="slide" data-slide-num="5" data-accent="var(--accent-yellow)">
+            <div class="slide-title-area">
+              <h2>研究問題與主要貢獻</h2>
+              <div class="claim">A-RAG 核心思考：如何將資訊檢索設計成對 Agent 友善的多粒度互動式介面？</div>
+            </div>
+
+            <div class="panel panel-accent-yellow" style="margin-bottom: 24px; padding: 18px 24px;">
+              <h3
+                style="color: var(--accent-yellow); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
+                Research Question (核心命題)</h3>
+              <p
+                style="font-family: 'Outfit', sans-serif; font-size: 21px; font-weight: 800; line-height: 1.35; color: var(--text-primary);">
+                Can a language model autonomously choose retrieval strategies across multiple granularities and scale
+                with test-time compute?
+              </p>
+            </div>
+
+            <div class="grid-3col" style="flex: 1; margin-bottom: 20px;">
+              <div class="card">
+                <h3>
+                  <span style="color: var(--accent-blue)">★</span>
+                  貢獻 1：Paradigm Shift
+                </h3>
+                <p>
+                  指出 RAG 研究應從靜態的<strong>管道組裝 (Static Pipelines)</strong> 轉向動態的<strong>代理決策架構 (Dynamic Agent-based
+                    Systems)</strong>。
+                </p>
+              </div>
+              <div class="card">
+                <h3>
+                  <span style="color: var(--accent-cyan)">★</span>
+                  貢獻 2：A-RAG Framework
+                </h3>
+                <p>
+                  設計了<strong>層級式檢索介面 (Hierarchical Interfaces)</strong>：融合精確 Keyword 匹配、Sentence 層級語意搜尋與 Chunk 逐次讀取。
+                </p>
+              </div>
+              <div class="card">
+                <h3>
+                  <span style="color: var(--accent-green)">★</span>
+                  貢獻 3：Scaling Analysis
+                </h3>
+                <p>
+                  首次深入探討並量化分析了 <strong>模型規模</strong>、<strong>最大步數限制</strong>與<strong>思考深度 (Reasoning Effort)</strong> 對
+                  RAG 表現的擴展規律。
+                </p>
+              </div>
+            </div>
+
+            <ul class="bullet-list" style="flex-direction: row; gap: 40px; justify-content: center; font-size: 13.5px;">
+              <li>本篇核心不是更換更強的外部向量檢索器，而是改進 LLM 與知識庫的互動協定。</li>
+              <li>實驗著重於多跳問答 (Multi-hop QA)，因為這類問題最需要多輪交叉比對與長鏈推理。</li>
+            </ul>
+          </div>
+
+          <!-- Slide 06: Method Overview -->
+          <div class="slide" data-slide-num="6" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>A-RAG 方法架構總覽</h2>
+              <div class="claim">整體架構由 Hierarchical Index、Retrieval Tools 以及最簡 Agent Loop 三大部分組成。</div>
+            </div>
+
+            <div style="flex: 1.3; position: relative;">
+              <svg class="flow-svg" viewBox="0 0 1100 240">
+                <!-- 定義漸變與箭頭 -->
+                <defs>
+                  <linearGradient id="cyan-blue" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="var(--accent-cyan)" />
+                    <stop offset="100%" stop-color="var(--accent-blue)" />
+                  </linearGradient>
+                </defs>
+
+                <!-- Corpus -->
+                <rect x="20" y="70" width="180" height="90" rx="8" class="flow-node" style="stroke: var(--text-dim);" />
+                <text x="110" y="110" text-anchor="middle" class="flow-text-title">Corpus (原始語料庫)</text>
+                <text x="110" y="130" text-anchor="middle" class="flow-text-body">將文件切分為</text>
+                <text x="110" y="145" text-anchor="middle" class="flow-text-body">約 1,000 tokens 的 Chunk</text>
+
+                <!-- 連線 -->
+                <path d="M 200,115 L 260,115" class="flow-connector" />
+
+                <!-- Hierarchical Index 三層 -->
+                <!-- Keyword -->
+                <rect x="280" y="15" width="220" height="60" rx="6" class="flow-node"
+                  style="stroke: var(--accent-blue);" />
+                <text x="390" y="45" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-blue)">Keyword Level</text>
+                <text x="390" y="62" text-anchor="middle" class="flow-text-body">執行期精確文字匹配</text>
+
+                <!-- Sentence -->
+                <rect x="280" y="85" width="220" height="60" rx="6" class="flow-node"
+                  style="stroke: var(--accent-purple);" />
+                <text x="390" y="115" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-purple)">Sentence Level</text>
+                <text x="390" y="132" text-anchor="middle" class="flow-text-body">句子級向量密集編碼 (Dense Embedding)</text>
+
+                <!-- Chunk -->
+                <rect x="280" y="155" width="220" height="60" rx="6" class="flow-node"
+                  style="stroke: var(--accent-green);" />
+                <text x="390" y="185" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-green)">Chunk Level</text>
+                <text x="390" y="202" text-anchor="middle" class="flow-text-body">完整 Chunk 與鄰近文本儲存</text>
+
+                <!-- 連線從三層到工具 -->
+                <path d="M 500,45 L 560,105" class="flow-connector" />
+                <path d="M 500,115 L 560,115" class="flow-connector" />
+                <path d="M 500,185 L 560,125" class="flow-connector" />
+
+                <!-- Tool Interface -->
+                <rect x="580" y="70" width="200" height="90" rx="8" class="flow-node"
+                  style="stroke: var(--accent-cyan);" />
+                <text x="680" y="105" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-cyan)">Tool
+                  Interface (工具介面)</text>
+                <text x="680" y="125" text-anchor="middle" class="flow-text-body"
+                  style="font-family:'Fira Code', monospace; font-weight:600;">keyword_search</text>
+                <text x="680" y="138" text-anchor="middle" class="flow-text-body"
+                  style="font-family:'Fira Code', monospace; font-weight:600;">semantic_search / chunk_read</text>
+
+                <!-- 連線 -->
+                <path d="M 780,115 L 850,115" class="flow-connector" />
+
+                <!-- LLM Agent -->
+                <rect x="870" y="70" width="200" height="90" rx="8" class="flow-node"
+                  style="stroke: var(--accent-yellow);" />
+                <text x="970" y="110" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-yellow)">LLM Agent (推理代理)</text>
+                <text x="970" y="130" text-anchor="middle" class="flow-text-body">自主判斷下一步工具</text>
+                <text x="970" y="145" text-anchor="middle" class="flow-text-body">或在證據充足時給出 Answer</text>
+              </svg>
+            </div>
+
+            <div class="panel" style="flex: 0.8; display:flex; flex-direction:column; justify-content:center;">
+              <h3 style="font-size:14px; font-weight:700; color:var(--accent-cyan); margin-bottom: 6px;">設計的核心價值：</h3>
+              <p style="font-size:13.5px; line-height: 1.5; color:var(--text-muted);">
+                不再是一口氣將大量無關 context 塞給模型。A-RAG 透過<strong>層級化多粒度介面</strong>，允許 Agent 僅提取當前思考所需的高價值
+                Snippet，並隨後按需讀取完整內容，大幅降低計算冗餘。
+              </p>
+            </div>
+          </div>
+
+          <!-- Slide 07: Hierarchical Index -->
+          <div class="slide" data-slide-num="7" data-accent="var(--accent-green)">
+            <div class="slide-title-area">
+              <h2>Hierarchical Index：三層資訊粒度</h2>
+              <div class="claim">A-RAG 將知識庫組織成多層級結構，以支持不同精確度要求的查詢情境。</div>
+            </div>
+
+            <div class="grid-3col" style="flex: 1.2; gap: 20px;">
+              <div class="panel panel-accent-blue"
+                style="height: 100%; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color:var(--accent-blue); font-size:17px; margin-bottom: 8px;">Keyword-level</h3>
+                  <p style="font-size:13px; line-height:1.5;">
+                    <strong>特點：</strong>免除複雜的線下倒排索引建立。在查詢時直接進行實體或專有名詞精確文本匹配。
+                  </p>
+                </div>
+                <div style="font-family:'Fira Code', monospace; font-size:11px; color:var(--text-dim);">Query-time match
+                </div>
+              </div>
+
+              <div class="panel panel-accent-purple"
+                style="height: 100%; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color:var(--accent-purple); font-size:17px; margin-bottom: 8px;">Sentence-level</h3>
+                  <p style="font-size:13px; line-height:1.5;">
+                    <strong>特點：</strong>將 Chunk 進一步切分為單句，並計算 Dense Embedding，支持精細語意相似性計算。
+                  </p>
+                </div>
+                <div style="font-family:'Fira Code', monospace; font-size:11px; color:var(--text-dim);">Dense sentence
+                  vector</div>
+              </div>
+
+              <div class="panel panel-accent-green"
+                style="height: 100%; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color:var(--accent-green); font-size:17px; margin-bottom: 8px;">Chunk-level</h3>
+                  <p style="font-size:13px; line-height:1.5;">
+                    <strong>特點：</strong>包含 1,000 tokens 左右之完整內容儲存。只有在 Agent 明確判定需要時才會被加載。
+                  </p>
+                </div>
+                <div style="font-family:'Fira Code', monospace; font-size:11px; color:var(--text-dim);">Progressive
+                  chunk read</div>
+              </div>
+            </div>
+
+            <div class="panel" style="flex: 0.8; background-color:var(--bg-panel2); margin-top:16px;">
+              <ul class="bullet-list" style="font-size: 13px;">
+                <li style="--accent-cyan:var(--accent-green)"><strong>Sentence-level Embedding</strong> 讓 Agent 可以精確定位最相關的核心句子，獲取片段
+                  Snippet 資訊，再藉此評估是否要調用完整 Chunk。</li>
+                <li style="--accent-cyan:var(--accent-green)"><strong>Keyword</strong> 適合實體人名、型號、代號等絕對精確搜尋，而 <strong>Semantic</strong>
+                  則適合概念化、同義詞但措辭不同的語意查詢，兩者互補。</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Slide 08: Keyword Search -->
+          <div class="slide" data-slide-num="8" data-accent="var(--accent-blue)">
+            <div class="slide-title-area">
+              <h2>Keyword Search：精確詞彙搜尋</h2>
+              <div class="claim">利用 Literal Keyword Matching，快速精確地找到包含特定核心實體 (Entity) 的文檔。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2;">
+              <div class="panel panel-accent-blue"
+                style="display:flex; flex-direction:column; justify-content:space-between; padding: 24px;">
+                <div>
+                  <h3 style="color: var(--accent-blue); font-size: 16px; margin-bottom: 12px;">概念化 Scoring 計算</h3>
+                  <div
+                    style="font-family: 'Fira Code', monospace; font-size: 20px; font-weight: 700; margin: 16px 0; color: var(--text-primary);">
+                    Score(chunk, K) ≈ &Sigma; count &times; len
+                  </div>
+                  <p style="font-size: 13.5px; color: var(--text-muted); line-height: 1.5;">
+                    <strong>核心直覺：</strong>關鍵字在該 Chunk 中出現次數越多、關鍵字本身字元長度越長（越長代表詞彙越具體），該 Chunk 與當前意圖的相關性評分就越高。
+                  </p>
+                </div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap: 16px;">
+                <div class="panel" style="display:flex; align-items:center; gap: 16px; padding: 12px 20px;">
+                  <div
+                    style="background-color: var(--bg-panel2); padding: 8px 12px; border-radius: 6px; font-family:'Fira Code', monospace; font-size: 12px; font-weight: 700; color: var(--accent-blue);">
+                    INPUT</div>
+                  <div style="font-size: 13px;">Keywords = ["A-RAG", "chunk_read"]</div>
+                </div>
+
+                <div style="text-align:center; font-size:16px; color: var(--text-dim);">&darr;</div>
+
+                <div class="panel"
+                  style="display:flex; align-items:center; gap: 16px; padding: 12px 20px; border-color: var(--accent-cyan);">
+                  <div
+                    style="background-color: var(--bg-panel2); padding: 8px 12px; border-radius: 6px; font-family:'Fira Code', monospace; font-size: 12px; font-weight: 700; color: var(--accent-cyan);">
+                    OUTPUT</div>
+                  <div style="font-size: 13px;">符合的 parent chunk IDs + 關鍵字前後的簡短片段</div>
+                </div>
+
+                <p style="font-size: 12.5px; color: var(--text-dim); font-style: italic; padding-left: 6px;">
+                  *Snippet 僅提取包含命中詞前後的單句，藉此減少大模型 Context 成本。
+                </p>
+              </div>
+            </div>
+
+            <ul class="bullet-list" style="flex: 0.8; margin-top: 16px; font-size: 13.5px;">
+              <li style="--accent-cyan: var(--accent-blue)"><strong>顯著優勢</strong>：對特定專有名詞、數據集名稱、計量數值進行精準查找時效率極高。</li>
+              <li style="--accent-cyan: var(--accent-blue)"><strong>低建置成本</strong>：論文特別強調避免了 Graph RAG 龐大的線下圖譜建置計算負擔 (Zero offline
+                construction overhead)。</li>
+            </ul>
+          </div>
+
+          <!-- Slide 09: Semantic Search -->
+          <div class="slide" data-slide-num="9" data-accent="var(--accent-purple)">
+            <div class="slide-title-area">
+              <h2>Semantic Search：句子層級語意搜尋</h2>
+              <div class="claim">用 Dense Embedding 向量找到語意最相近的特定 Sentence，並快速回溯至其 parent chunk。</div>
+            </div>
+
+            <!-- SVG 連線檢索圖 -->
+            <div style="flex: 1.1; margin-bottom: 16px;">
+              <svg class="flow-svg" viewBox="0 0 1100 130">
+                <rect x="20" y="25" width="160" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-purple);" />
+                <text x="100" y="60" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-purple);">Question q</text>
+                <text x="100" y="82" text-anchor="middle" class="flow-text-body">自然語言提問</text>
+
+                <path d="M 180,65 L 240,65" class="flow-connector" />
+
+                <rect x="250" y="25" width="190" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-purple);" />
+                <text x="345" y="60" text-anchor="middle" class="flow-text-title">Query Embedding</text>
+                <text x="345" y="82" text-anchor="middle" class="flow-text-body"
+                  style="font-family:'Fira Code', monospace;">v_q = femb(q)</text>
+
+                <path d="M 440,65 L 500,65" class="flow-connector" />
+
+                <rect x="510" y="25" width="220" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-blue);" />
+                <text x="620" y="60" text-anchor="middle" class="flow-text-title"
+                  style="fill: var(--accent-blue);">Sentence Embeddings</text>
+                <text x="620" y="82" text-anchor="middle" class="flow-text-body"
+                  style="font-family:'Fira Code', monospace;">v_ij = femb(s_ij)</text>
+
+                <path d="M 730,65 L 790,65" class="flow-connector" />
+
+                <rect x="800" y="25" width="280" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-cyan);" />
+                <text x="940" y="60" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-cyan);">Top
+                  Sentences &amp; Parents</text>
+                <text x="940" y="82" text-anchor="middle" class="flow-text-body">計算餘弦相似度，定位關鍵句與區塊</text>
+              </svg>
+            </div>
+
+            <div class="grid-2col" style="flex: 0.9;">
+              <div class="panel panel-accent-purple"
+                style="display:flex; justify-content:center; flex-direction:column; padding: 14px 20px;">
+                <div
+                  style="font-family: 'Fira Code', monospace; font-size: 16px; font-weight: 700; color: var(--accent-purple);">
+                  Score_sem(sentence, q) = Cosine(v_sentence, v_q)
+                </div>
+              </div>
+              <div class="panel" style="display:flex; flex-direction:column; justify-content:center; gap: 8px; padding: 14px 18px; font-size: 13.5px; line-height: 1.55; word-break: normal; overflow-wrap: break-word;">
+                <div>每個 Chunk 的最終相關性分數，由其內部<strong>評分最高的一句話</strong>決定。</div>
+                <div>檢索系統只輸出這些最高分的 <strong>Matching Sentences</strong>，作為 Snippets。</div>
+              </div>
+            </div>
+
+            <ul class="bullet-list" style="margin-top: 12px; font-size: 13px;">
+              <li style="--accent-cyan: var(--accent-purple)">解決 Keyword Search 找不到，但字面意思語意極為相近的問題（如語意同義轉換）。</li>
+              <li style="--accent-cyan: var(--accent-purple)">相較於對整個 1000-token chunk
+                計算向量，針對單句（Sentence-level）能更精確定位具體細節，避免核心語意被雜訊稀釋。</li>
+            </ul>
+          </div>
+
+          <!-- Slide 10: Chunk Read -->
+          <div class="slide" data-slide-num="10" data-accent="var(--accent-green)">
+            <div class="slide-title-area">
+              <h2>Chunk Read：Progressive Information Acquisition</h2>
+              <div class="claim">搜尋工具優先回傳短 Snippet，大模型代理在判定有需要時才載入完整 Chunk。</div>
+            </div>
+
+            <!-- SVG SVG 流程 -->
+            <div style="flex: 1; margin-bottom: 20px;">
+              <svg class="flow-svg" viewBox="0 0 1100 100">
+                <rect x="10" y="15" width="220" height="70" rx="8" class="flow-node"
+                  style="stroke: var(--accent-cyan);" />
+                <text x="120" y="48" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-cyan)">1.
+                  Search Results</text>
+                <text x="120" y="68" text-anchor="middle" class="flow-text-body">僅返回 IDs + 簡短片段</text>
+
+                <path d="M 230,50 L 290,50" class="flow-connector" />
+
+                <rect x="300" y="15" width="220" height="70" rx="8" class="flow-node"
+                  style="stroke: var(--accent-yellow);" />
+                <text x="410" y="48" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-yellow)">2.
+                  Agent Judgment</text>
+                <text x="410" y="68" text-anchor="middle" class="flow-text-body">判定哪些 Chunk 需完整閱讀？</text>
+
+                <path d="M 520,50 L 580,50" class="flow-connector" />
+
+                <rect x="590" y="15" width="220" height="70" rx="8" class="flow-node"
+                  style="stroke: var(--accent-green);" />
+                <text x="700" y="48" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-green)">3.
+                  chunk_read Tool</text>
+                <text x="700" y="68" text-anchor="middle" class="flow-text-body">載入完整文本及相鄰上下文</text>
+
+                <path d="M 810,50 L 870,50" class="flow-connector" />
+
+                <rect x="880" y="15" width="210" height="70" rx="8" class="flow-node"
+                  style="stroke: var(--accent-blue);" />
+                <text x="985" y="48" text-anchor="middle" class="flow-text-title" style="fill: var(--accent-blue)">4.
+                  Evidence Synthesis</text>
+                <text x="985" y="68" text-anchor="middle" class="flow-text-body">進行事實彙整與最終回答</text>
+              </svg>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.1;">
+              <div class="panel panel-accent-green"
+                style="display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color:var(--accent-green); font-size:15px; margin-bottom: 6px;">Context Tracker (智慧快取機制)
+                  </h3>
+                  <p style="font-size:13px; line-height: 1.45;">
+                    Agent 歷史對話中讀過的完整 Chunk 會被系統追蹤。當 Agent 多次查詢並命中有重複的 Chunk 時，系統<strong>僅回傳提示，不再重複載入全文</strong>，避免重複消耗 Token。
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Slide 11: Agent Loop -->
+          <div class="slide" data-slide-num="11" data-accent="var(--accent-yellow)">
+            <div class="slide-title-area">
+              <h2>Agent Loop：ReAct-like 工具呼叫流程</h2>
+              <div class="claim">A-RAG 採用極簡的代理人循環，以純淨隔離出 Hierarchical Index 的真實效用。</div>
+            </div>
+
+            <!-- SVG 環狀與分支決策流程 -->
+            <div style="flex: 1.6; position: relative; margin-top: 10px;">
+              <svg class="flow-svg" viewBox="0 0 1100 330">
+                <!-- 1. Reason (思考) -->
+                <rect x="50" y="20" width="240" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-yellow);" />
+                <svg class="flow-icon" x="65" y="38" width="44" height="44" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--accent-yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path
+                    d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1 0-3.12 3 3 0 0 1 0-4.88 2.5 2.5 0 0 1 0-3.12A2.5 2.5 0 0 1 9.5 2z" />
+                  <path
+                    d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 0-3.12 3 3 0 0 0 0-4.88 2.5 2.5 0 0 0 0-3.12A2.5 2.5 0 0 0 14.5 2z" />
+                </svg>
+                <text x="125" y="51" class="flow-text-title"
+                  style="fill: var(--accent-yellow); font-size: 13.5px; font-weight: 800;">1. 思考推理 (Reason)</text>
+                <text x="125" y="70" class="flow-text-body" style="font-size: 11px;">分析並拆解原始問題，</text>
+                <text x="125" y="85" class="flow-text-body" style="font-size: 11px;">規劃下一步的檢索策略。</text>
+
+                <!-- 箭頭 1 -> 2 -->
+                <path d="M 290,60 L 350,60" class="flow-connector" />
+
+                <!-- 2. Tool Call (調用工具) -->
+                <rect x="360" y="20" width="250" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-cyan);" />
+                <svg class="flow-icon" x="375" y="38" width="44" height="44" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--accent-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path
+                    d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                </svg>
+                <text x="435" y="51" class="flow-text-title"
+                  style="fill: var(--accent-cyan); font-size: 13.5px; font-weight: 800;">2. 呼叫工具 (Tool Call)</text>
+                <text x="435" y="70" class="flow-text-body" style="font-size: 11px;">動態選擇並呼叫層級介面</text>
+                <text x="435" y="85" class="flow-text-body" style="font-size: 11px;">（如搜尋關鍵字或讀取文檔）。</text>
+
+                <!-- 箭頭 2 -> 3 -->
+                <path d="M 610,60 L 710,60" class="flow-connector" />
+
+                <!-- 3. Observation (觀察) -->
+                <rect x="720" y="20" width="250" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-green);" />
+                <svg class="flow-icon" x="735" y="38" width="44" height="44" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <path d="M11 8a3 3 0 0 0-3 3" stroke-dasharray="2,2" />
+                </svg>
+                <text x="795" y="51" class="flow-text-title"
+                  style="fill: var(--accent-green); font-size: 13.5px; font-weight: 800;">3. 觀察結果 (Observation)</text>
+                <text x="795" y="70" class="flow-text-body" style="font-size: 11px;">分析並評估工具回傳內容，</text>
+                <text x="795" y="85" class="flow-text-body" style="font-size: 11px;">彙整當前已收集到的證據。</text>
+
+                <!-- 分支線條由 Box 3 下方分流 -->
+                <!-- 左分支：到 evidence not enough -->
+                <path d="M 845,100 L 845,130 L 640,130 L 640,145" class="flow-connector" />
+                <!-- 右分支：到 evidence enough -->
+                <path d="M 845,100 L 845,130 L 880,130 L 880,145" class="flow-connector" />
+
+                <!-- Label Box 1: evidence not enough -->
+                <rect x="550" y="145" width="180" height="32" rx="6" class="flow-node"
+                  style="stroke: var(--border-color); fill: var(--bg-panel2);" />
+                <text x="640" y="165" text-anchor="middle"
+                  style="fill: var(--text-muted); font-size: 12px; font-weight: 700;">證據不足 (繼續檢索)</text>
+
+                <!-- Label Box 2: evidence enough -->
+                <rect x="790" y="145" width="180" height="32" rx="6" class="flow-node"
+                  style="stroke: var(--border-color); fill: var(--bg-panel2);" />
+                <text x="880" y="165" text-anchor="middle"
+                  style="fill: var(--text-muted); font-size: 12px; font-weight: 700;">證據充足 (給出回答)</text>
+
+                <!-- 迴路：由 evidence not enough 回到 Tool Call 底部 -->
+                <path d="M 640,177 L 640,210 L 485,210 L 485,110" class="flow-connector" />
+
+                <!-- 直線：由 evidence enough 到 Final Answer -->
+                <path d="M 880,177 L 880,220" class="flow-connector" />
+
+                <!-- 4. Final Answer (最終回答) -->
+                <rect x="750" y="230" width="260" height="80" rx="8" class="flow-node"
+                  style="stroke: var(--accent-green); fill: rgba(74, 222, 128, 0.05); filter: drop-shadow(0px 0px 10px rgba(74, 222, 128, 0.15));" />
+                <svg class="flow-icon" x="765" y="248" width="44" height="44" viewBox="0 0 24 24" fill="none"
+                  stroke="var(--accent-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <text x="825" y="261" class="flow-text-title"
+                  style="fill: var(--accent-green); font-size: 14.5px; font-weight: 800;">最終回答 (Final Answer)</text>
+                <text x="825" y="280" class="flow-text-body" style="font-size: 11px;">全面整合所有搜尋到的事實，</text>
+                <text x="825" y="295" class="flow-text-body" style="font-size: 11px;">給出有憑有據的完整答覆。</text>
+              </svg>
+            </div>
+
+            <div class="panel" style="flex: 0.7; display:flex; flex-direction:column; justify-content:center;">
+              <ul class="bullet-list" style="font-size:12.8px; gap:6px;">
+                <li style="--accent-cyan: var(--accent-yellow)"><strong>單一工具限制</strong>：每一步僅呼叫一個 Tool，以防大模型在複雜流程（Multi-tool
+                  Orchestration）中產生混亂。</li>
+                <li style="--accent-cyan: var(--accent-yellow)"><strong>安全熔斷機制</strong>：當迭代次數達到最大限制（Max
+                  Iterations）仍未回答時，強制命令模型根據當前已搜集到的所有線索整理最佳答覆。</li>
+                <li style="--accent-cyan: var(--accent-yellow)"><strong>實驗核心</strong>：避免花哨的 Agent 架構污染實驗，純粹考驗層級化工具是否能引導 LLM
+                  自然學會有效的檢索策略。</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Slide 12: Experimental Setting -->
+          <div class="slide" data-slide-num="12" data-accent="var(--accent-orange)">
+            <div class="slide-title-area">
+              <h2>實驗設定</h2>
+              <div class="claim">論文利用多個多跳問答基準 (Multi-hop QA Benchmarks) 嚴格評測 A-RAG 的精確性與 Context 效率。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.4fr 1fr; flex: 1;">
+              <div class="table-container">
+                <table class="premium-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 25%;">測試類別</th>
+                      <th>具體配置 / 設定項目</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-orange);">Benchmarks</td>
+                      <td>MuSiQue, HotpotQA, 2WikiMultiHopQA, GraphRAG-Bench</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-orange);">Baselines</td>
+                      <td>Direct Answer, Naive RAG, GraphRAG, HippoRAG2, LinearRAG, FaithfulRAG, MA-RAG, RAGentA</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-orange);">Ours (A-RAG)</td>
+                      <td><strong>A-RAG (Naive)</strong>: 單一 Embedding 工具；<br><strong>A-RAG (Full)</strong>: 完整的 3
+                        層層級化檢索介面。</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-orange);">Backbone LLMs</td>
+                      <td>GPT-4o-mini, GPT-5-mini</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-orange);">主要指標</td>
+                      <td>LLM-Evaluation Accuracy, Contain-Match Accuracy, Retrieved Tokens</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-orange"
+                style="display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color:var(--accent-orange); font-size:16px; margin-bottom: 12px;">公平比對的科學設計</h3>
+                  <ul class="bullet-list" style="font-size: 13px; gap: 12px;">
+                    <li style="--accent-cyan:var(--accent-orange)">完整沿用 <strong>LinearRAG</strong> 提供之知識語料庫 (Corpus)
+                      與提問集。</li>
+                    <li style="--accent-cyan:var(--accent-orange)">多數對照組統一採用 <strong>Qwen3-Embedding-0.6B</strong>
+                      作為向量模型。</li>
+                    <li style="--accent-cyan:var(--accent-orange)">LLM 裁判 (Judge) 統一採用 <strong>GPT-5-mini</strong>。</li>
+                  </ul>
+                </div>
+                <div
+                  style="background-color:var(--bg-panel); border-radius: 6px; padding: 10px; border:1px solid var(--border-color); font-size:12.5px; font-weight:700; text-align:center;">
+                  不僅對比準確率，同時觀測 A-RAG 隨 Backbone 性能及思考算力的擴展性。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 13: Main Results -->
+          <div class="slide" data-slide-num="13" data-accent="var(--accent-green)">
+            <div class="slide-title-area">
+              <h2>主要結果：A-RAG Full 整體最佳</h2>
+              <div class="claim">在 GPT-5-mini 下，A-RAG Full 於各大難度的基準測試上均獲得了整體最優異的性能表現。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.5fr 1fr; flex: 1;">
+              <div class="table-container">
+                <table class="premium-table" style="text-align: center;">
+                  <thead>
+                    <tr>
+                      <th style="text-align: left;">Method</th>
+                      <th>MuSiQue</th>
+                      <th>HotpotQA</th>
+                      <th>2Wiki</th>
+                      <th>Med.</th>
+                      <th>Novel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="text-align: left;">Naive RAG</td>
+                      <td>52.8</td>
+                      <td>81.2</td>
+                      <td>50.2</td>
+                      <td>86.1</td>
+                      <td>70.6</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left;">GraphRAG</td>
+                      <td>48.3</td>
+                      <td>82.5</td>
+                      <td>66.5</td>
+                      <td>87.3</td>
+                      <td>77.1</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left;">LinearRAG</td>
+                      <td>62.4</td>
+                      <td>86.2</td>
+                      <td>87.2</td>
+                      <td>79.2</td>
+                      <td>54.7</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left;">A-RAG Naive</td>
+                      <td>66.2</td>
+                      <td>90.8</td>
+                      <td>70.6</td>
+                      <td>92.7</td>
+                      <td>80.4</td>
+                    </tr>
+                    <tr style="background-color: rgba(74, 222, 128, 0.08); font-weight: 700;">
+                      <td style="text-align: left; color: var(--accent-green);">★ A-RAG Full</td>
+                      <td class="strong">74.1</td>
+                      <td class="strong">94.5</td>
+                      <td class="strong">89.7</td>
+                      <td class="strong">93.1</td>
+                      <td class="strong">85.3</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-green"
+                style="display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                  <h3 style="color:var(--accent-green); font-size:16px; margin-bottom: 12px;">關鍵的 2 個洞察</h3>
+                  <ul class="bullet-list" style="font-size:12.5px; gap: 10px;">
+                    <li style="--accent-cyan:var(--accent-green)"><strong>A-RAG
+                        Naive</strong>（僅提供單一語意檢索工具）就已突破並勝過多數現有方法。</li>
+                    <li style="--accent-cyan:var(--accent-green)"><strong>A-RAG Full</strong>
+                      則因層級化工具的協同作用，在表現上取得進一步的大幅躍升。</li>
+                  </ul>
+                </div>
+                <div
+                  style="font-size:11.5px; color:var(--text-dim); text-align:center; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                  *指標數據為 GPT-5-mini Backbone 對應之 LLM-Evaluation Accuracy。
+                </div>
+              </div>
+            </div>
+
+            <div class="panel"
+              style="background-color: var(--bg-panel2); margin-top: 16px; text-align:center; padding: 12px;">
+              <span style="font-weight: 800; color: var(--text-primary);">核心數據提升：</span>
+              MuSiQue 精確度自 Naive RAG 的 <span style="color:var(--accent-red); font-weight:700;">52.8</span> 暴升至 A-RAG
+              Full 的 <span style="color:var(--accent-green); font-weight:800; font-size:16px;">74.1</span>；2Wiki 基準測試中自
+              <span style="color:var(--accent-red); font-weight:700;">50.2</span> 劇增至 <span
+                style="color:var(--accent-green); font-weight:800; font-size:16px;">89.7</span>！
+            </div>
+          </div>
+
+          <!-- Slide 14: Ablation & Scaling -->
+          <div class="slide" data-slide-num="14" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>Ablation、Scaling 與 Token 效率</h2>
+              <div class="claim">A-RAG 的優越性源於多粒度工具鏈的整合，並能高效釋放思考算力的潛在威力。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1; gap: 16px;">
+              <!-- 左列：消融與 Tokens -->
+              <div style="display:flex; flex-direction:column; gap:16px;">
+                <div class="table-container">
+                  <table class="premium-table" style="text-align:center; font-size:11.5px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align: left;">消融實驗</th>
+                        <th>MuSi.</th>
+                        <th>Hotpot</th>
+                        <th>2Wiki</th>
+                        <th>Med.</th>
+                        <th>Novel</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style="text-align: left; font-weight:700; color: var(--accent-green);">A-RAG Full</td>
+                        <td style="font-weight:800; color: var(--accent-green)">74.1</td>
+                        <td style="font-weight:800; color: var(--accent-green)">94.5</td>
+                        <td style="font-weight:800; color: var(--accent-green)">89.7</td>
+                        <td>93.1</td>
+                        <td style="font-weight:800; color: var(--accent-green)">85.3</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">w/o Keyword</td>
+                        <td>72.6</td>
+                        <td>93.0</td>
+                        <td>88.9</td>
+                        <td>93.2</td>
+                        <td>85.0</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">w/o Semantic</td>
+                        <td>69.4</td>
+                        <td>93.9</td>
+                        <td>89.1</td>
+                        <td>92.1</td>
+                        <td>85.2</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">w/o Chunk</td>
+                        <td>73.6</td>
+                        <td>93.6</td>
+                        <td>89.0</td>
+                        <td style="font-weight:800; color: var(--accent-red);">93.3</td>
+                        <td>85.1</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="table-container">
+                  <table class="premium-table" style="text-align:center; font-size:11.5px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align: left;">Retrieved Tokens</th>
+                        <th>MuSi.</th>
+                        <th>Hotpot</th>
+                        <th>2Wiki</th>
+                        <th>Med.</th>
+                        <th>Novel</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style="text-align: left; font-weight:700;">Naive RAG</td>
+                        <td style="font-weight:800; color: var(--accent-green);">5,387</td>
+                        <td>5,358</td>
+                        <td>5,506</td>
+                        <td style="font-weight:800; color: var(--accent-green);">5,418</td>
+                        <td style="font-weight:800; color: var(--accent-green);">4,997</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">A-RAG Naive</td>
+                        <td>56,360</td>
+                        <td>27,455</td>
+                        <td>45,406</td>
+                        <td>23,657</td>
+                        <td>22,391</td>
+                      </tr>
+                      <tr style="font-weight:700;">
+                        <td style="text-align: left;">A-RAG Full</td>
+                        <td>5,663</td>
+                        <td style="font-weight:800; color: var(--accent-green);">2,737</td>
+                        <td style="font-weight:800; color: var(--accent-green);">2,930</td>
+                        <td>7,678</td>
+                        <td>6,087</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 右列：測試擴展與 Token 說明 -->
+              <div style="display:flex; flex-direction:column; gap:16px;">
+                <div class="panel panel-accent-yellow" style="padding: 12px 18px;">
+                  <h3 style="color: var(--accent-yellow); font-size: 14px; margin-bottom: 6px;">Test-time Scaling
+                    (最大步數限制 5 &rarr; 20)</h3>
+                  <div class="scaling-bar-group">
+                    <div class="scaling-bar-item">
+                      <div class="scaling-bar-label">GPT-4o-mini</div>
+                      <div class="scaling-bar-bg">
+                        <div class="scaling-bar-fill" style="width: 40%; background-color: var(--accent-blue);"></div>
+                        <div class="scaling-bar-value">+4%</div>
+                      </div>
+                    </div>
+                    <div class="scaling-bar-item">
+                      <div class="scaling-bar-label">GPT-5-mini</div>
+                      <div class="scaling-bar-bg">
+                        <div class="scaling-bar-fill" style="width: 80%; background-color: var(--accent-green);"></div>
+                        <div class="scaling-bar-value">+8%</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel panel-accent-purple"
+                  style="padding: 12px 18px; flex: 1; display:flex; flex-direction:column; justify-content:center;">
+                  <div class="reasoning-panel">
+                    <h3 style="color: var(--accent-purple); font-size: 14px; margin-bottom: 2px;">Reasoning Effort
+                      (推理強度)</h3>
+                    <div style="font-size:11px; color:var(--text-dim);">minimal &rarr; high</div>
+                    <div class="reasoning-big-num">約 +25% Performance</div>
+                    <p style="font-size: 12px; color: var(--text-muted);">大模型強大的 Reasoning 能力，更擅長處理複雜的多步交叉取證。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel"
+              style="background-color: var(--bg-panel2); margin-top: 10px; padding: 8px 16px; font-size: 12.5px;">
+              <strong>Token 結論：</strong> A-RAG Naive 因工具單一，Agent 只能過度載入 context；而 <strong>A-RAG Full</strong>
+              憑藉精準的層級過濾，在精確度提升的同時，<strong>消耗的 Token 卻節省了接近一個數量級</strong>！
+            </div>
+          </div>
+
+          <!-- Slide 16: Datasets & Scope -->
+          <div class="slide" data-slide-num="16" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>資料集與實驗範圍</h2>
+              <div class="claim">先以三個 multi-hop QA 資料集建立可比較、可穩定重跑的 100 題實驗範圍。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2; gap: 20px;">
+              <!-- 左列：資料集表格 -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-cyan);"></span>
+                  實驗選用之多跳推理資料集
+                </h3>
+                <div class="table-container">
+                  <table class="premium-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 25%;">Dataset</th>
+                        <th style="width: 20%;">目前題數</th>
+                        <th>選用理由與研究價值</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style="font-weight: 700; color: var(--accent-cyan);">MuSiQue</td>
+                        <td style="font-family: 'Fira Code', monospace; font-weight: 700;">100</td>
+                        <td>多跳組合推理；其高難度結構最能測出 <strong>Iterative Retrieval</strong> 的探索價值。</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700; color: var(--accent-blue);">HotpotQA</td>
+                        <td style="font-family: 'Fira Code', monospace; font-weight: 700;">100</td>
+                        <td>經典多跳 QA 基準；數值可以直接與論文主表進行跨系統的對照與校驗。</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700; color: var(--accent-purple);">2Wiki</td>
+                        <td style="font-family: 'Fira Code', monospace; font-weight: 700;">100</td>
+                        <td>跨實體/跨頁推理；精確檢驗 <code>chunk_read</code> 是否補足缺失之關鍵證據。</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 右列：控制變因與定位說明 -->
+              <div style="display:flex; flex-direction:column; gap:16px; padding-top: 30px;">
+                <div class="panel panel-accent-purple" style="padding: 12px 18px; flex: 1; display:flex; flex-direction:column; justify-content:center;">
+                  <h3 style="color: var(--accent-purple); font-size: 14px; margin-bottom: 6px;">🎯 實驗定位與宣告</h3>
+                  <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                     本輪實驗旨在進行 <strong>Official Repo Sanity Check</strong>（官方開源代碼可用性驗證）與小樣本基準比較，並不宣稱大規模的 Benchmark Reproduction，從而最大程度控制實驗環境的穩定度。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 17: Official GitHub Data Flow -->
+          <div class="slide" data-slide-num="17" data-accent="var(--accent-blue)">
+            <div class="slide-title-area">
+              <h2>官方 GitHub 資料流程</h2>
+              <div class="claim">本次直接使用 official A-RAG repo 的資料格式與 CLI 流程</div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:20px; flex: 1;">
+              <!-- 流程圖 SVG 容器 -->
+              <div style="height: 140px; width: 100%; border: 1px dashed var(--border-color); border-radius: 8px; background-color: var(--bg-panel); display: flex; align-items: center; justify-content: center; padding: 10px;">
+                <svg viewBox="0 0 1000 120" style="width:100%; height:100%; overflow:visible;">
+                  <!-- Define arrow markers -->
+                  <defs>
+                    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--border-color)" />
+                    </marker>
+                    <marker id="arrow-active" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent-blue)" />
+                    </marker>
+                  </defs>
+
+                  <!-- Steps -->
+                  <!-- 1. Input Data -->
+                  <rect x="20" y="20" width="160" height="70" rx="6" fill="var(--bg-slide)" stroke="var(--border-color)" stroke-width="1.5" class="flow-node" />
+                  <text x="100" y="46" text-anchor="middle" class="flow-text-title" font-size="12">1. 輸入數據</text>
+                  <text x="100" y="66" text-anchor="middle" class="flow-text-body" font-size="10">chunks / questions.json</text>
+
+                  <path d="M 180 55 L 230 55" stroke="var(--border-color)" stroke-width="1.5" marker-end="url(#arrow)" />
+
+                  <!-- 2. Indexing -->
+                  <rect x="240" y="20" width="160" height="70" rx="6" fill="var(--bg-slide)" stroke="var(--accent-cyan)" stroke-width="1.5" class="flow-node" />
+                  <text x="320" y="46" text-anchor="middle" class="flow-text-title" font-size="12" fill="var(--accent-cyan)">2. 向量索引建立</text>
+                  <text x="320" y="66" text-anchor="middle" class="flow-text-body" font-size="10">build_index.py (MiniLM)</text>
+
+                  <path d="M 400 55 L 450 55" stroke="var(--accent-cyan)" stroke-width="1.5" marker-end="url(#arrow-active)" />
+
+                  <!-- 3. Running -->
+                  <rect x="460" y="20" width="160" height="70" rx="6" fill="var(--bg-slide)" stroke="var(--accent-blue)" stroke-width="1.5" class="flow-node" />
+                  <text x="540" y="46" text-anchor="middle" class="flow-text-title" font-size="12" fill="var(--accent-blue)">3. 執行 Agent 循環</text>
+                  <text x="540" y="66" text-anchor="middle" class="flow-text-body" font-size="10">batch_runner.py (Gemini)</text>
+
+                  <path d="M 620 55 L 670 55" stroke="var(--accent-blue)" stroke-width="1.5" marker-end="url(#arrow-active)" />
+
+                  <!-- 4. Evaluation -->
+                  <rect x="680" y="20" width="160" height="70" rx="6" fill="var(--bg-slide)" stroke="var(--accent-purple)" stroke-width="1.5" class="flow-node" />
+                  <text x="760" y="46" text-anchor="middle" class="flow-text-title" font-size="12" fill="var(--accent-purple)">4. 指標評測</text>
+                  <text x="760" y="66" text-anchor="middle" class="flow-text-body" font-size="10">eval.py (Acc & cost)</text>
+                </svg>
+              </div>
+
+              <!-- 兩欄細節說明 -->
+              <div class="grid-2col" style="gap: 20px;">
+                <div class="panel" style="padding: 12px 16px;">
+                  <h4 style="font-size: 13px; font-weight:700; color:var(--accent-blue); margin-bottom: 6px;">📂 核心資料結構與對應</h4>
+                  <ul class="bullet-list" style="gap: 6px; font-size: 12px;">
+                    <li><code>chunks.json</code>：收納知識庫全文切片，具備唯一對應的 chunk_ids。</li>
+                    <li><code>questions.json</code>：包含測試問題、正確答案（Gold Answer）等評估欄位。</li>
+                    <li><code>index/</code>：存放本地 MiniLM-L6-v2 生成之 sentence embeddings 索引檔。</li>
+                  </ul>
+                </div>
+                <div class="panel" style="padding: 12px 16px;">
+                  <h4 style="font-size: 13px; font-weight:700; color:var(--accent-purple); margin-bottom: 6px;">⚙️ 執行流程與分工</h4>
+                  <ul class="bullet-list" style="gap: 6px; font-size: 12px;">
+                    <li><strong>Indexing：</strong>預先執行 <code>build_index.py</code> 建立層級化向量庫。</li>
+                    <li><strong>Batch Run：</strong>運行 <code>batch_runner.py</code> 逐題啟動多輪 Agent Loop 探索。</li>
+                    <li><strong>Evaluation：</strong>執行 <code>eval.py</code> 自動計算模型準確度 (LLM/Contain Acc)。</li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- 重點提醒 -->
+              <div style="background-color: var(--bg-panel2); border-radius: 6px; padding: 8px 16px; font-size: 12px; text-align: center; border-left: 4px solid var(--accent-blue);">
+                <strong>部署重點：</strong>資料夾與腳本流程<strong>100% 保持官方格式與分工</strong>，修改僅限於 Local config 端點配置、Gemini 模型接入與 100 題 Subset 規模。
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 18: Experiment Settings & Parameters -->
+          <div class="slide" data-slide-num="18" data-accent="var(--accent-purple)">
+            <div class="slide-title-area">
+              <h2>實驗設定與參數</h2>
+              <div class="claim">本次三資料集正式結果共用同一組 local config，方便做橫向比較。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2; gap: 20px;">
+              <!-- 左列：參數列表 -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-purple);"></span>
+                  Local Configuration 參數詳情
+                </h3>
+                <div class="table-container">
+                  <table class="premium-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 35%;">類別</th>
+                        <th>設定</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style="font-weight: 700;">model</td>
+                        <td style="font-family: 'Fira Code', monospace; color: var(--accent-cyan); font-weight: 700;">google/gemini-3.5-flash (High)</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">endpoint</td>
+                        <td style="font-family: 'Fira Code', monospace; font-size: 11.5px;">http://127.0.0.1:8787/v1</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">embedding</td>
+                        <td style="font-family: 'Fira Code', monospace; font-size: 11px;">sentence-transformers/all-MiniLM-L6-v2</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">index backend</td>
+                        <td style="font-family: 'Fira Code', monospace;">sentence_transformers / index-minilm</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">max_loops</td>
+                        <td style="font-family: 'Fira Code', monospace; font-weight: 700; color: var(--accent-purple);">8</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">max_token_budget</td>
+                        <td style="font-family: 'Fira Code', monospace;">32000</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">subset</td>
+                        <td style="font-family: 'Fira Code', monospace;">100 questions per dataset</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 右列：評估指標與 Token 備註 -->
+              <div style="display:flex; flex-direction:column; gap:16px; padding-top: 30px;">
+                <div class="panel panel-accent-cyan" style="padding: 14px 18px;">
+                  <h3 style="color: var(--accent-cyan); font-size: 14px; margin-bottom: 8px;">📊 Evaluation 指標</h3>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
+                    <div style="background-color:var(--bg-panel2); padding: 8px; border-radius: 4px; font-weight:700; text-align:center;">LLM Accuracy</div>
+                    <div style="background-color:var(--bg-panel2); padding: 8px; border-radius: 4px; font-weight:700; text-align:center;">Contain Accuracy</div>
+                    <div style="background-color:var(--bg-panel2); padding: 8px; border-radius: 4px; font-weight:700; text-align:center;">Avg Loops</div>
+                    <div style="background-color:var(--bg-panel2); padding: 8px; border-radius: 4px; font-weight:700; text-align:center;">Avg Retrieved Tokens</div>
+                    <div style="background-color:var(--bg-panel2); padding: 8px; border-radius: 4px; font-weight:700; text-align:center; grid-column: span 2;">Avg Cost / Q</div>
+                  </div>
+                </div>
+
+                <div class="panel panel-accent-yellow" style="padding: 12px 18px; flex: 1; display:flex; flex-direction:column; justify-content:center;">
+                  <h3 style="color: var(--accent-yellow); font-size: 13.5px; margin-bottom: 6px; font-weight:700;">⚠️ 檢索 Token 概念澄清</h3>
+                  <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                    <strong>Retrieved tokens</strong> 是系統累計的檢索 token，不是完整 Gemini API prompt / completion token breakdown。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 19: Main Results - LLM Accuracy -->
+          <div class="slide" data-slide-num="19" data-accent="var(--accent-green)">
+            <div class="slide-title-area">
+              <h2>主結果表：LLM Accuracy</h2>
+              <div class="claim">論文 GPT-5-mini 主表與本地 Gemini 100 題 subset 的三資料集結果放在同一頁比較。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2; gap: 20px;">
+              <!-- 左列：主要比對表格 -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-green);"></span>
+                  Accuracy 結果對照表 (%)
+                </h3>
+                <div class="table-container">
+                  <table class="premium-table" style="text-align: center;">
+                    <thead>
+                      <tr>
+                        <th style="text-align: left;">Setting</th>
+                        <th style="color: var(--accent-cyan)">MuSiQue</th>
+                        <th style="color: var(--accent-blue)">HotpotQA</th>
+                        <th style="color: var(--accent-purple)">2Wiki</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style="opacity: 0.85; font-size: 12.5px;">
+                        <td style="text-align: left;">Paper Naive RAG</td>
+                        <td style="font-family:'Fira Code';">52.8</td>
+                        <td style="font-family:'Fira Code';">81.2</td>
+                        <td style="font-family:'Fira Code';">50.2</td>
+                      </tr>
+                      <tr style="opacity: 0.85; font-size: 12.5px;">
+                        <td style="text-align: left;">Paper A-RAG Naive</td>
+                        <td style="font-family:'Fira Code';">66.2</td>
+                        <td style="font-family:'Fira Code';">90.8</td>
+                        <td style="font-family:'Fira Code';">70.6</td>
+                      </tr>
+                      <tr style="font-weight: 600; font-size: 12.5px;">
+                        <td style="text-align: left;">Paper A-RAG Full</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-cyan);">74.1</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-blue);">94.5</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-purple);">89.7</td>
+                      </tr>
+                      <tr style="border-top: 2px solid var(--border-color);">
+                        <td style="text-align: left; font-weight: 500;">A-RAG-Naive (3.5 flash High)</td>
+                        <td style="font-family:'Fira Code';">71.0</td>
+                        <td style="font-family:'Fira Code';">85.0</td>
+                        <td style="font-family:'Fira Code';">76.0</td>
+                      </tr>
+                      <tr style="font-weight: 800; background-color: rgba(74, 222, 128, 0.08); border: 2px solid var(--accent-green);">
+                        <td style="text-align: left; color: var(--accent-green);">A-RAG-Full (3.5 flash High)</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-cyan); font-size:14px;">87.88</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-blue); font-size:14px;">97.00</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-purple); font-size:14px;">97.00</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 右列：數據解讀與結論 -->
+              <div style="display:flex; flex-direction:column; gap:12px; padding-top: 30px;">
+                <div class="panel panel-accent-green" style="padding: 12px 16px;">
+                  <h3 style="color: var(--accent-green); font-size: 13.5px; margin-bottom: 6px;">🔍 讀法</h3>
+                  <ul class="bullet-list" style="gap: 5px; font-size: 12.5px;">
+                    <li><strong>穩定性佳：</strong>三組 official A-RAG Full 都能穩定跑完 100 題規模。</li>
+                    <li><strong>極致精確：</strong>HotpotQA / 2Wiki 在本地 subset 皆達 <strong>97.0% LLM Accuracy</strong>。</li>
+                    <li><strong>精算備註：</strong>MuSiQue answered 99/100，因此分母依 answered samples 計算。</li>
+                  </ul>
+                </div>
+
+                <div class="panel panel-accent-yellow" style="padding: 10px 16px; flex: 1; display:flex; flex-direction:column; justify-content:center;">
+                  <h3 style="color: var(--accent-yellow); font-size: 13.5px; margin-bottom: 4px; font-weight:700;">💡 實驗結論</h3>
+                  <p style="font-size: 12px; color: var(--text-muted); line-height: 1.45;">
+                    這不是完整重現論文大規模結果，但三個 subset 的數值已和論文同量級，且 <strong>Full 設定明顯最強</strong>。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 20: Supplementary Results - Efficiency -->
+          <div class="slide" data-slide-num="20" data-accent="var(--accent-yellow)">
+            <div class="slide-title-area">
+              <h2>補充結果：Contain 與效率</h2>
+              <div class="claim">準確率之外，這頁補上 contain accuracy、平均 loop、retrieved token 與平均成本。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2; gap: 20px;">
+              <!-- 左列：效率表格 -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-yellow);"></span>
+                  三資料集效率與成本大表
+                </h3>
+                <div class="table-container">
+                  <table class="premium-table" style="text-align: center;">
+                    <thead>
+                      <tr>
+                        <th style="text-align: left;">Dataset</th>
+                        <th style="color: var(--accent-green)">Contain</th>
+                        <th style="color: var(--accent-blue)">Avg Loops</th>
+                        <th style="color: var(--accent-purple)">Avg Retrieved Tokens</th>
+                        <th style="color: var(--accent-orange)">Avg Cost / Q</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style="font-weight:700; text-align: left;">MuSiQue</td>
+                        <td style="font-family:'Fira Code'; font-weight:700;">82.83</td>
+                        <td style="font-family:'Fira Code';">7.31</td>
+                        <td style="font-family:'Fira Code'; color:var(--accent-purple);">4245.6</td>
+                        <td style="font-family:'Fira Code'; color:var(--accent-orange); font-size:11.5px;">0.027867</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight:700; text-align: left;">HotpotQA</td>
+                        <td style="font-family:'Fira Code'; font-weight:700;">92.0</td>
+                        <td style="font-family:'Fira Code';">4.89</td>
+                        <td style="font-family:'Fira Code'; color:var(--accent-purple);">2515.6</td>
+                        <td style="font-family:'Fira Code'; color:var(--accent-orange); font-size:11.5px;">0.013642</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight:700; text-align: left;">2Wiki</td>
+                        <td style="font-family:'Fira Code'; font-weight:700;">94.0</td>
+                        <td style="font-family:'Fira Code';">5.08</td>
+                        <td style="font-family:'Fira Code'; color:var(--accent-purple);">2368.7</td>
+                        <td style="font-family:'Fira Code'; color:var(--accent-orange); font-size:11.5px;">0.013650</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 右列：效率與難度分析 -->
+              <div style="display:flex; flex-direction:column; gap:12px; padding-top: 30px;">
+                <div class="panel panel-accent-cyan" style="padding: 12px 16px;">
+                  <h3 style="color: var(--accent-cyan); font-size: 13.5px; margin-bottom: 6px;">🧠 效率觀察</h3>
+                  <ul class="bullet-list" style="gap: 5px; font-size: 12px;">
+                    <li><strong>成本相近：</strong>HotpotQA / 2Wiki 成本接近，且 loop 數低於 MuSiQue。</li>
+                    <li><strong>高難度探索：</strong>MuSiQue 較難：loop、token、cost 都最高。</li>
+                    <li><strong>追蹤真實：</strong>成本數值來自 local cost tracker。</li>
+                  </ul>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 21: MuSiQue Ablation Study -->
+          <div class="slide" data-slide-num="21" data-accent="var(--accent-red)">
+            <div class="slide-title-area">
+              <h2>MuSiQue 消融：三個工具都不是裝飾</h2>
+              <div class="claim">固定 MuSiQue 100 題，移除 keyword_search、semantic_search 或 chunk_read 觀察能力下降。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2; gap: 20px;">
+              <!-- 左列：消融大表 -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-red);"></span>
+                  MuSiQue 消融實驗結果對比
+                </h3>
+                <div class="table-container">
+                  <table class="premium-table" style="text-align: center;">
+                    <thead>
+                      <tr>
+                        <th style="text-align: left; width: 28%">Variant</th>
+                        <th style="color: var(--accent-cyan)">LLM Acc</th>
+                        <th style="color: var(--accent-green)">Contain</th>
+                        <th>Loops</th>
+                        <th style="color: var(--accent-purple)">Tokens</th>
+                        <th style="color: var(--accent-orange)">Cost/Q</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style="font-weight: 700; background-color: rgba(8, 145, 178, 0.05);">
+                        <td style="color: var(--accent-cyan); text-align: left;">Full</td>
+                        <td style="font-family:'Fira Code';">87.88</td>
+                        <td style="font-family:'Fira Code';">82.83</td>
+                        <td style="font-family:'Fira Code';">7.31</td>
+                        <td style="font-family:'Fira Code';">4245.6</td>
+                        <td style="font-family:'Fira Code'; font-size:11px;">0.027867</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">w/o keyword</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-red); font-weight:700;">67.68</td>
+                        <td style="font-family:'Fira Code';">62.63</td>
+                        <td style="font-family:'Fira Code';">7.44</td>
+                        <td style="font-family:'Fira Code';">2938.6</td>
+                        <td style="font-family:'Fira Code'; font-size:11px;">0.025791</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">w/o semantic</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-orange); font-weight:700;">74.49</td>
+                        <td style="font-family:'Fira Code';">71.43</td>
+                        <td style="font-family:'Fira Code';">7.04</td>
+                        <td style="font-family:'Fira Code';">3009.0</td>
+                        <td style="font-family:'Fira Code'; font-size:11px;">0.025010</td>
+                      </tr>
+                      <tr>
+                        <td style="text-align: left;">w/o chunk_read</td>
+                        <td style="font-family:'Fira Code'; color: var(--accent-red); font-weight:700;">65.66</td>
+                        <td style="font-family:'Fira Code';">64.65</td>
+                        <td style="font-family:'Fira Code';">6.88</td>
+                        <td style="font-family:'Fira Code';">1722.5</td>
+                        <td style="font-family:'Fira Code'; font-size:11px;">0.018767</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 右列：消融解讀 -->
+              <div style="display:flex; flex-direction:column; gap:12px; padding-top: 30px;">
+                <div class="panel panel-accent-red" style="padding: 12px 16px;">
+                  <h3 style="color: var(--accent-red); font-size: 13.5px; margin-bottom: 6px;">🔍 消融讀法</h3>
+                  <ul class="bullet-list" style="gap: 5px; font-size: 12px;">
+                    <li><strong>Full 仍最強：</strong>所有的工具組合在一起時能達到最強的表現。</li>
+                    <li><strong>語意影響小：</strong>w/o semantic 的傷害最小。</li>
+                    <li><strong>關鍵工具：</strong>w/o keyword 與 w/o chunk_read 下降最大。</li>
+                    <li><strong>高精確代價：</strong>chunk_read 少了會變便宜，但 accuracy 掉最多。</li>
+                  </ul>
+                </div>
+
+                <div class="panel panel-accent-yellow" style="padding: 10px 16px; flex: 1; display:flex; flex-direction:column; justify-content:center;">
+                  <h3 style="color: var(--accent-yellow); font-size: 13px; margin-bottom: 4px; font-weight:700;">💡 結論</h3>
+                  <p style="font-size: 12px; color: var(--text-muted); line-height: 1.45;">
+                    MuSiQue 消融支持主張：A-RAG 的優勢來自 hierarchical interface 的工具組合，而非單一 retriever。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 22: Visualized Results & Charts -->
+          <div class="slide" data-slide-num="22" data-accent="var(--accent-purple)">
+            <div class="slide-title-area">
+              <h2>視覺化結果：三資料集與消融差距</h2>
+              <div class="claim">用 bar chart 快速呈現本地 Full 結果，以及 MuSiQue 消融造成的 LLM Accuracy drop。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1; gap: 24px; align-items: stretch;">
+              <!-- 左側 Chart: Your A-RAG Full Accuracy -->
+              <div class="panel" style="padding: 16px 20px; display:flex; flex-direction:column; gap:15px; justify-content: space-between;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border-color); padding-bottom:8px; margin:0;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-cyan);"></span>
+                  Your A-RAG Full LLM Accuracy (%)
+                </h3>
+                
+                <!-- CSS Bar Chart 1 -->
+                <div style="display:flex; flex-direction:column; gap:16px; margin: 15px 0;">
+                  <!-- Bar 1 -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
+                      <span>MuSiQue (Local Subset)</span>
+                      <span style="color:var(--accent-cyan)">87.9%</span>
+                    </div>
+                    <div style="width:100%; height:16px; background-color:var(--bg-panel2); border-radius:8px; overflow:hidden;">
+                      <div style="width:87.9%; height:100%; background:linear-gradient(90deg, var(--accent-cyan), var(--accent-blue)); border-radius:8px; box-shadow:0 0 10px rgba(8, 145, 178, 0.4);"></div>
+                    </div>
+                  </div>
+                  <!-- Bar 2 -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
+                      <span>HotpotQA (Local Subset)</span>
+                      <span style="color:var(--accent-blue)">97.0%</span>
+                    </div>
+                    <div style="width:100%; height:16px; background-color:var(--bg-panel2); border-radius:8px; overflow:hidden;">
+                      <div style="width:97%; height:100%; background:linear-gradient(90deg, var(--accent-blue), var(--accent-purple)); border-radius:8px; box-shadow:0 0 10px rgba(37, 99, 235, 0.4);"></div>
+                    </div>
+                  </div>
+                  <!-- Bar 3 -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
+                      <span>2WikiMultiHop (Local Subset)</span>
+                      <span style="color:var(--accent-purple)">97.0%</span>
+                    </div>
+                    <div style="width:100%; height:16px; background-color:var(--bg-panel2); border-radius:8px; overflow:hidden;">
+                      <div style="width:97%; height:100%; background:linear-gradient(90deg, var(--accent-purple), var(--accent-cyan)); border-radius:8px; box-shadow:0 0 10px rgba(124, 58, 237, 0.4);"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="font-size:11px; color:var(--text-dim); text-align:center;">
+                  本地 100 題 Subset 中，三個基準均交出極佳 of Accuracy 成績單。
+                </div>
+              </div>
+
+              <!-- 右側 Chart: MuSiQue Ablation -->
+              <div class="panel" style="padding: 16px 20px; display:flex; flex-direction:column; gap:15px; justify-content: space-between;">
+                <h3 style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border-color); padding-bottom:8px; margin:0;">
+                  <span style="display:inline-block; width:6px; height:12px; background-color:var(--accent-red);"></span>
+                  MuSiQue 消融性能落差 (LLM Acc %)
+                </h3>
+
+                <!-- CSS Bar Chart 2 -->
+                <div style="display:flex; flex-direction:column; gap:12px; margin: 10px 0;">
+                  <!-- Bar 1 (Full) -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:600;">
+                      <span>A-RAG Full (All Tools)</span>
+                      <span style="color:var(--accent-cyan)">87.9%</span>
+                    </div>
+                    <div style="width:100%; height:12px; background-color:var(--bg-panel2); border-radius:6px; overflow:hidden;">
+                      <div style="width:87.9%; height:100%; background:var(--accent-cyan); border-radius:6px;"></div>
+                    </div>
+                  </div>
+                  <!-- Bar 2 (w/o semantic) -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:600;">
+                      <span>w/o semantic</span>
+                      <span style="color:var(--accent-orange)">74.5%</span>
+                    </div>
+                    <div style="width:100%; height:12px; background-color:var(--bg-panel2); border-radius:6px; overflow:hidden;">
+                      <div style="width:74.5%; height:100%; background:var(--accent-orange); border-radius:6px;"></div>
+                    </div>
+                  </div>
+                  <!-- Bar 3 (w/o keyword) -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:600;">
+                      <span>w/o keyword</span>
+                      <span style="color:var(--accent-red)">67.7%</span>
+                    </div>
+                    <div style="width:100%; height:12px; background-color:var(--bg-panel2); border-radius:6px; overflow:hidden;">
+                      <div style="width:67.7%; height:100%; background:var(--accent-red); border-radius:6px;"></div>
+                    </div>
+                  </div>
+                  <!-- Bar 4 (w/o chunk_read) -->
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:600;">
+                      <span>w/o chunk_read</span>
+                      <span style="color:var(--accent-red)">65.7%</span>
+                    </div>
+                    <div style="width:100%; height:12px; background-color:var(--bg-panel2); border-radius:6px; overflow:hidden;">
+                      <div style="width:65.7%; height:100%; background:var(--accent-red); border-radius:6px;"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="font-size:11px; color:var(--text-dim); text-align:center; font-weight:700;">
+                  圖上可講的重點：三資料集 Full 都接近或超過 88%；MuSiQue 中 keyword_search 與 chunk_read 的移除最傷。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 23: Critique & Followup Questions -->
+          <div class="slide" data-slide-num="23" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>延伸驗證：三個可測的提問</h2>
+              <div class="claim">我把評論轉成可重跑的 100 題 MuSiQue 對照實驗，而不是只提出 concept 性質質疑。</div>
+            </div>
+
+            <div class="grid-3col" style="flex: 1.2; gap: 16px; align-items: stretch;">
+              <!-- Card Q1 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-cyan); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-cyan); color:white; font-size:12px;">Q1</span>
+                    檢索資源是否不公平？
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    若 Naive RAG 也拿到長 context，是否能追上 A-RAG？
+                  </p>
+                  <ul class="bullet-list" style="margin-top: 8px; font-size: 11.5px; gap: 4px;">
+                    <li style="--accent-cyan: var(--accent-cyan);"><strong>對照組：</strong>Naive vs Long-context Naive vs A-RAG Full</li>
+                  </ul>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  資源對等控制驗證
+                </div>
+              </div>
+
+              <!-- Card Q2 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-blue); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-blue); color:white; font-size:12px;">Q2</span>
+                    Context Efficiency 是否低估成本？
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    A-RAG 多輪 ReAct 會重複處理歷史對話，不能只算 unique retrieved tokens。
+                  </p>
+                  <ul class="bullet-list" style="margin-top: 8px; font-size: 11.5px; gap: 4px;">
+                    <li style="--accent-cyan: var(--accent-blue);"><strong>指標：</strong>retrieved tokens vs total input processed</li>
+                  </ul>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  多輪對話累計 Token 成本
+                </div>
+              </div>
+
+              <!-- Card Q3 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-purple); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-purple); color:white; font-size:12px;">Q3</span>
+                    baseline 是否被弱化？
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    多跳 QA 需要實體匹配；若 Naive 改成 BM25 + vector hybrid，差距還在嗎？
+                  </p>
+                  <ul class="bullet-list" style="margin-top: 8px; font-size: 11.5px; gap: 4px;">
+                    <li style="--accent-cyan: var(--accent-purple);"><strong>對照組：</strong>Naive vs Hybrid Naive vs A-RAG Full</li>
+                  </ul>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  強 Baseline 對照組驗證
+                </div>
+              </div>
+            </div>
+
+            <div class="panel panel-accent-yellow" style="margin-top: 16px; padding: 12px 18px; font-size: 12.5px; border-left: 4px solid var(--accent-yellow);">
+              <strong>設計原則：</strong>可執行（本地資料與 proxy）、可驗證（同一批 100 題、同一 evaluator）、有價值（針對論文指標與 baseline 假設）。
+            </div>
+          </div>
+
+          <!-- Slide 24: Table 1 Overview Comparison -->
+          <div class="slide" data-slide-num="24" data-accent="var(--accent-orange)">
+            <div class="slide-title-area">
+              <h2>表 1：六組方法總比較</h2>
+              <div class="claim">先用同一張表看 accuracy、retrieved tokens、真實 input tokens 與成本之間的 trade-off。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.6fr 1fr; flex: 1; gap: 20px;">
+              <div class="table-container">
+                <table class="premium-table" style="text-align: center; font-size: 11px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align: left; font-size: 10.5px;">Setting</th>
+                      <th style="color: var(--accent-cyan)">LLM Acc (%)</th>
+                      <th style="color: var(--accent-green)">Contain (%)</th>
+                      <th style="color: var(--accent-blue)">Retrieved (Tokens)</th>
+                      <th style="color: var(--accent-purple)">Input Processed (Tokens)</th>
+                      <th>API Calls</th>
+                      <th style="color: var(--accent-orange)">Cost/Q</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="text-align: left; font-weight: 500;">Naive RAG</td>
+                      <td style="font-family:'Fira Code';">21.0</td>
+                      <td style="font-family:'Fira Code';">21.0</td>
+                      <td style="font-family:'Fira Code';">5,623.1</td>
+                      <td style="font-family:'Fira Code';">5,690.7</td>
+                      <td style="font-family:'Fira Code';">1.00</td>
+                      <td style="font-family:'Fira Code'; font-size: 10.5px;">0.004621</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left; font-weight: 500;">Long-context Naive</td>
+                      <td style="font-family:'Fira Code';">24.0</td>
+                      <td style="font-family:'Fira Code';">24.0</td>
+                      <td style="font-family:'Fira Code';">22,441.0</td>
+                      <td style="font-family:'Fira Code';">22,426.2</td>
+                      <td style="font-family:'Fira Code';">1.00</td>
+                      <td style="font-family:'Fira Code'; font-size: 10.5px;">0.010447</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left; font-weight: 500;">BM25+Vector Hybrid</td>
+                      <td style="font-family:'Fira Code';">47.0</td>
+                      <td style="font-family:'Fira Code';">46.0</td>
+                      <td style="font-family:'Fira Code';">11,296.0</td>
+                      <td style="font-family:'Fira Code';">11,407.8</td>
+                      <td style="font-family:'Fira Code';">1.00</td>
+                      <td style="font-family:'Fira Code'; font-size: 10.5px;">0.007043</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left; font-weight: 500;">A-RAG Naive</td>
+                      <td style="font-family:'Fira Code';">66.7</td>
+                      <td style="font-family:'Fira Code';">63.6</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-cyan); font-weight: 700;">3,485.5</td>
+                      <td style="font-family:'Fira Code';">28,797.9</td>
+                      <td style="font-family:'Fira Code';">8.29</td>
+                      <td style="font-family:'Fira Code'; font-size: 10.5px;">0.026000</td>
+                    </tr>
+                    <tr>
+                      <td style="text-align: left; font-weight: 500;">A-RAG w/o keyword</td>
+                      <td style="font-family:'Fira Code';">69.0</td>
+                      <td style="font-family:'Fira Code';">64.0</td>
+                      <td style="font-family:'Fira Code';">3,694.9</td>
+                      <td style="font-family:'Fira Code';">30,360.1</td>
+                      <td style="font-family:'Fira Code';">8.41</td>
+                      <td style="font-family:'Fira Code'; font-size: 10.5px;">0.025906</td>
+                    </tr>
+                    <tr style="font-weight: 800; background-color: rgba(74, 222, 128, 0.08); border: 2px solid var(--accent-green);">
+                      <td style="text-align: left; color: var(--accent-green);">A-RAG Full</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-cyan); font-weight: 800; font-size: 12.5px;">85.0</td>
+                      <td style="font-family:'Fira Code';">83.0</td>
+                      <td style="font-family:'Fira Code';">4,247.9</td>
+                      <td style="font-family:'Fira Code';">30,400.2</td>
+                      <td style="font-family:'Fira Code';">7.93</td>
+                      <td style="font-family:'Fira Code'; font-size: 10.5px; color: var(--accent-orange);">0.027383</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-orange" style="display:flex; flex-direction:column; justify-content:space-between; padding: 14px 18px;">
+                <div>
+                  <h3 style="color:var(--accent-orange); font-size:15px; margin-bottom: 8px;">📊 數據讀法</h3>
+                  <ul class="bullet-list" style="font-size:12px; gap: 8px;">
+                    <li><strong>效能巔峰：</strong><code>A-RAG Full</code> 的 Accuracy 達到了最優 of <strong>85.0</strong>。</li>
+                    <li><strong>真實成本高昂：</strong><code>A-RAG Full</code> 準確率最高，但其真實 input tokens (30,400.2) 與成本 ($0.027) 也最高。</li>
+                    <li><strong>強 Baseline 浮現：</strong><code>Hybrid</code> baseline 明顯比 Naive RAG 更強 (47.0% vs 21.0%)，是個更公平的對手。</li>
+                  </ul>
+                </div>
+                <div style="background-color:var(--bg-panel); border-radius: 6px; padding: 10px; border:1px solid var(--border-color); font-size:11px; text-align:center;">
+                  * 註：A-RAG Naive retrieved token 數最低 (3,485.5)，但因多輪 ReAct 重複傳入歷史，真實 input tokens processed 高達 28,797.9。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 25: Table 2 - Q1 Long Context Control -->
+          <div class="slide" data-slide-num="25" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>表 2：Q1 長 context 是否就夠？</h2>
+              <div class="claim">如果 A-RAG 只是因為拿到更多內容，那 Long-context Naive 應該要大幅接近 A-RAG。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.6fr 1fr; flex: 1; gap: 20px;">
+              <div class="table-container">
+                <table class="premium-table" style="text-align: left; font-size: 12.5px;">
+                  <thead>
+                    <tr>
+                      <th style="width: 25%">方法</th>
+                      <th style="width: 35%; color: var(--accent-blue)">Context 規模</th>
+                      <th style="width: 15%; color: var(--accent-cyan); text-align: center;">LLM Acc</th>
+                      <th style="width: 25%">實驗意義</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700;">Naive RAG</td>
+                      <td style="font-family:'Fira Code';">5,623.1 retrieved</td>
+                      <td style="font-family:'Fira Code'; text-align: center;">21.0</td>
+                      <td>原始單次檢索 baseline</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700;">Long-context Naive</td>
+                      <td style="font-family:'Fira Code';">22,441.0 retrieved</td>
+                      <td style="font-family:'Fira Code'; text-align: center;">24.0</td>
+                      <td>把更多 context 一次塞給模型</td>
+                    </tr>
+                    <tr style="font-weight: 700; background-color: rgba(8, 145, 178, 0.05);">
+                      <td style="color: var(--accent-cyan);">A-RAG Full</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-blue)">4,247.9 retrieved / 30,400.2 processed</td>
+                      <td style="font-family:'Fira Code'; text-align: center; color: var(--accent-cyan); font-weight: 800; font-size: 13.5px;">85.0</td>
+                      <td style="color: var(--text-primary);">多輪工具使用與證據讀取</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-cyan" style="display:flex; flex-direction:column; justify-content:space-between; padding: 14px 18px;">
+                <div>
+                  <h3 style="color:var(--accent-cyan); font-size:15px; margin-bottom: 8px;">💡 關鍵結論</h3>
+                  <p style="font-size:12.5px; line-height:1.5; color:var(--text-muted);">
+                    <strong>文字多不代表答對：</strong>Long-context Naive 雖然拿到了多達 22,441.0 tokens 的完整 context，但準確率僅從 21.0 小幅升至 <strong>24.0</strong>，與 A-RAG Full 的 <strong>85.0</strong> 存在巨大鴻溝。
+                  </p>
+                </div>
+                <div style="background-color:var(--bg-panel2); border-radius: 6px; padding: 10px; font-size:11px; font-weight: 600;">
+                  * 這有力地表明了「純粹塞字數」本身無法取代 A-RAG 的多輪工具調配與循序推理。此組 control 仍極具寫入論文的價值。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 26: Table 3 - Q2 True Token Cost -->
+          <div class="slide" data-slide-num="26" data-accent="var(--accent-purple)">
+            <div class="slide-title-area">
+              <h2>表 3：Q2 真實 token 成本</h2>
+              <div class="claim">論文的 Context Efficiency 只算撈出的 unique tokens；我補算每輪 LLM 實際處理的 input tokens。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.6fr 1fr; flex: 1; gap: 20px;">
+              <div class="table-container">
+                <table class="premium-table" style="text-align: center; font-size: 12.5px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align: left; width: 28%">方法</th>
+                      <th style="color: var(--accent-blue)">Retrieved Tokens</th>
+                      <th style="color: var(--accent-purple)">Input Processed</th>
+                      <th style="color: var(--accent-yellow)">放大倍率</th>
+                      <th style="color: var(--accent-orange)">Cost/Q</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700; text-align: left;">A-RAG Naive</td>
+                      <td style="font-family:'Fira Code';">3,485.5</td>
+                      <td style="font-family:'Fira Code';">28,797.9</td>
+                      <td style="font-family:'Fira Code'; font-weight: 700;">8.3x</td>
+                      <td style="font-family:'Fira Code'; font-size: 11.5px;">0.026000</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; text-align: left;">A-RAG w/o keyword</td>
+                      <td style="font-family:'Fira Code';">3,694.9</td>
+                      <td style="font-family:'Fira Code';">30,360.1</td>
+                      <td style="font-family:'Fira Code'; font-weight: 700;">8.2x</td>
+                      <td style="font-family:'Fira Code'; font-size: 11.5px;">0.025906</td>
+                    </tr>
+                    <tr style="font-weight: 700; background-color: rgba(124, 58, 237, 0.05);">
+                      <td style="color: var(--accent-purple); text-align: left;">A-RAG Full</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-blue)">4,247.9</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-purple)">30,400.2</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-yellow); font-weight: 800;">7.2x</td>
+                      <td style="font-family:'Fira Code'; color: var(--accent-orange); font-size: 11.5px;">0.027383</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-purple" style="display:flex; flex-direction:column; justify-content:space-between; padding: 14px 18px;">
+                <div>
+                  <h3 style="color:var(--accent-purple); font-size:15px; margin-bottom: 8px;">💡 關鍵發現</h3>
+                  <p style="font-size:12.5px; line-height:1.5; color:var(--text-muted);">
+                    <strong>被忽略的隱藏放大倍率：</strong>A-RAG Full 雖然只撈取了 4,247.9 tokens，但因為 ReAct 推理鏈多輪通訊帶來的歷史累積，模型總共處理了高達 <strong>30,400.2</strong> 的 processed input tokens，放大了 <strong>7.2 倍</strong>。
+                  </p>
+                </div>
+                <div style="background-color:var(--bg-panel2); border-radius: 6px; padding: 10px; font-size:11px; font-weight: 600;">
+                  * 結論：Context Efficiency 不能直接等同於運算量 (Compute Efficiency)。未來的評估必須同時提列 API 次數、真實處理 Token 數及費用。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 27: Table 4 - Q3 Hybrid Baseline Control -->
+          <div class="slide" data-slide-num="27" data-accent="var(--accent-yellow)">
+            <div class="slide-title-area">
+              <h2>表 4：Q3 Hybrid baseline 是否追上？</h2>
+              <div class="claim">把 Naive RAG 升級為 BM25 + vector hybrid，檢查 A-RAG Full 的優勢是否只是 keyword_search 帶來。</div>
+            </div>
+
+            <div class="grid-2col" style="grid-template-columns: 1.6fr 1fr; flex: 1; gap: 20px;">
+              <div class="table-container">
+                <table class="premium-table" style="text-align: left; font-size: 12.5px;">
+                  <thead>
+                    <tr>
+                      <th style="width: 25%">方法</th>
+                      <th style="width: 35%; color: var(--accent-cyan)">檢索策略</th>
+                      <th style="width: 15%; color: var(--accent-green); text-align: center;">LLM Acc</th>
+                      <th style="width: 25%">與前一組差距</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700;">Naive RAG</td>
+                      <td>Vector top-k</td>
+                      <td style="font-family:'Fira Code'; text-align: center;">21.0%</td>
+                      <td style="color: var(--text-dim);">baseline</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-blue);">Hybrid Naive RAG</td>
+                      <td>BM25 + Vector RRF</td>
+                      <td style="font-family:'Fira Code'; text-align: center; color: var(--accent-blue); font-weight: 700;">47.0%</td>
+                      <td style="color: var(--accent-blue); font-weight: 700;">+26.0 pts</td>
+                    </tr>
+                    <tr style="font-weight: 700; background-color: rgba(74, 222, 128, 0.05);">
+                      <td style="color: var(--accent-green);">A-RAG Full</td>
+                      <td>keyword + semantic + chunk_read</td>
+                      <td style="font-family:'Fira Code'; text-align: center; color: var(--accent-green); font-weight: 800; font-size: 13.5px;">85.0%</td>
+                      <td style="color: var(--accent-green); font-weight: 800;">+38.0 pts vs Hybrid</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="panel panel-accent-yellow" style="display:flex; flex-direction:column; justify-content:space-between; padding: 14px 18px;">
+                <div>
+                  <h3 style="color:var(--accent-yellow); font-size:15px; margin-bottom: 8px;">💡 關鍵發現</h3>
+                  <p style="font-size:12.5px; line-height:1.5; color:var(--text-muted);">
+                    <strong>對照組極具威脅：</strong>Naive RAG 一旦引入 `BM25+Vector` 混合檢索，準確率直接暴增 26% 達到 <strong>47.0%</strong>，證明多跳任務中的關鍵字精準搜尋確實起極大作用。
+                  </p>
+                </div>
+                <div style="background-color:var(--bg-panel2); border-radius: 6px; padding: 10px; font-size:11px; font-weight: 600;">
+                  * 結論：A-RAG Full (85.0%) 仍然高出強 Baseline 多達 38.0%，印證了除了純關鍵字工具外，多輪迭代決策機制本身具有獨特、不可磨滅的科研附加價值。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 28: Implement Summary -->
+          <div class="slide" data-slide-num="28" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>實作結果小結</h2>
+              <div class="claim">先收斂 official pipeline、主結果與消融，再接到最後的公平性驗證結論。</div>
+            </div>
+
+            <div class="grid-3col" style="flex: 1.2; gap: 16px;">
+              <!-- Point 1 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-cyan); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-cyan); color:white; font-size:12px;">1</span>
+                    官方 Pipeline 穩定跑通
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    MuSiQue、HotpotQA、2Wiki 都完成 100 題 subset。流程 100% 使用官方的 <code>build_index</code>、<code>batch_runner</code> 與 <code>eval</code> 腳本。
+                  </p>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  Sanity Check PASS
+                </div>
+              </div>
+
+              <!-- Point 2 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-green); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-green); color:white; font-size:12px;">2</span>
+                    數值高度對齊論文量級
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    本地 Your A-RAG Full 斬獲了 <strong>87.88% / 97.00% / 97.00%</strong> 的極高 LLM Accuracy。表現更具優越性，且與論文完美展現了相同的數量演進規律。
+                  </p>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  Gemini-3.5-flash
+                </div>
+              </div>
+
+              <!-- Point 3 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-purple); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-purple); color:white; font-size:12px;">3</span>
+                    消融印證工具互補
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    移除 <code>keyword_search</code> 降至 67.68，移除 <code>chunk_read</code> 降至 65.66，有力地支持了 A-RAG 的 hierarchical 多粒度協作優勢。
+                  </p>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  消融下降斷崖顯著
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 29: Validation Conclusions -->
+          <div class="slide" data-slide-num="29" data-accent="var(--accent-red)">
+            <div class="slide-title-area">
+              <h2>實驗驗證結論</h2>
+              <div class="claim">這四張表讓 follow-up 變為可執行、可驗證且能深刻探討論文邊界的延伸研究。</div>
+            </div>
+
+            <div class="grid-3col" style="flex: 1.2; gap: 16px;">
+              <!-- Conclusion 1 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-cyan); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-cyan); color:white; font-size:12px;">1</span>
+                    檢索資源不對等
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    Long-context Naive 並沒有追上 A-RAG；由此證明「更多 context」本身<strong>不是</strong>達到高準確率的充分條件。
+                  </p>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  Separation of Effects
+                </div>
+              </div>
+
+              <!-- Conclusion 2 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-orange); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-orange); color:white; font-size:12px;">2</span>
+                    成本指標需補強
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    A-RAG Full 的真實 input tokens 處理量約為其 retrieved tokens 的 <strong>7 到 8 倍</strong>，計算效率的定義需要被重新提列。
+                  </p>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  隐形運算量曝光
+                </div>
+              </div>
+
+              <!-- Conclusion 3 -->
+              <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                <div>
+                  <h3 style="color: var(--accent-purple); font-size: 15px;">
+                    <span style="display:flex; justify-content:center; align-items:center; width:22px; height:22px; border-radius:50%; background-color:var(--accent-purple); color:white; font-size:12px;">3</span>
+                    Baseline 應更強
+                  </h3>
+                  <p style="margin-top: 10px; font-size: 12.5px; line-height: 1.5;">
+                    Hybrid baseline 雖然將 Naive 大幅拉升至 47.0%，但 A-RAG Full 依然展現了不可被 Hybrid 完全抹除的強大迭代探索優勢。
+                  </p>
+                </div>
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:15px; font-size:11px; color:var(--text-dim); font-weight:600;">
+                  迭代工具依然領先
+                </div>
+              </div>
+            </div>
+
+            <div class="panel panel-accent-red" style="margin-top: 16px; padding: 12px 18px; font-size: 13px; text-align: center; font-weight: 700; color: var(--text-primary); border-left: 4px solid var(--accent-red);">
+              🗣 報告講法：我們的 critique 不是否定 A-RAG 的有效性，而是指出未來高階 RAG 論文需要補上 stronger baseline 與真實 processed input tokens，其 accuracy gain 才能被公平、客觀地解釋。
+            </div>
+          </div>
+
+          <!-- Slide 15: Limitations & Conclusion -->
+          <div class="slide" data-slide-num="15" data-accent="var(--accent-yellow)">
+            <div class="slide-title-area">
+              <h2>限制、未來方向與結論</h2>
+              <div class="claim">A-RAG 證明了自主檢索介面的科研價值，但仍需要更多泛化與精細的設計檢驗。</div>
+            </div>
+
+            <div class="grid-2col" style="flex: 1.2; gap: 20px;">
+              <div class="table-container">
+                <table class="premium-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 35%;">當前核心限制</th>
+                      <th>具體局限與挑戰</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red);">Tool design 未完整枚舉</td>
+                      <td>論文尚未系統評測更多樣的工具組合形式與更適配大模型的 Tool Description。</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red);">Frontier model 驗證不足</td>
+                      <td>未充分評估更大規模的旗艦前沿模型（例如 GPT-5 Full、Gemini-3 Pro）。</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-red);">任務範疇高度集中 QA</td>
+                      <td>尚未在事實查核 (Fact Verification)、多輪對話或長文報告生成上完整驗證其效果。</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="table-container">
+                <table class="premium-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 35%; background-color: rgba(74, 222, 128, 0.05); color: var(--accent-green)">
+                        未來可行方向</th>
+                      <th style="background-color: rgba(74, 222, 128, 0.05);">建議的評估方法</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-green);">工具策略消融細化</td>
+                      <td>深入測試不同檢索 Toolset、Top-k、Snippet 長度對模型決策的複雜度影響。</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-green);">多任務泛化性測試</td>
+                      <td>將 A-RAG 架構遷移至複雜的事實交叉核實 (Fact Check) 或精細的長報告生成。</td>
+                    </tr>
+                    <tr>
+                      <td style="font-weight: 700; color: var(--accent-green);">Token 預算感知 Agent</td>
+                      <td>將 Tokens 算力消耗預算直接納入 Agent 決策條件，測試更完美的性氣比折衷。</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel panel-accent-yellow" style="margin-top: 16px; padding: 14px 20px;">
+              <h3
+                style="color: var(--accent-yellow); font-size: 15px; margin-bottom: 6px; font-weight:800; text-align:center;">
+                Takeaway</h3>
+              <p
+                style="font-size: 13.5px; line-height: 1.5; color: var(--text-primary); text-align:center; font-weight:700;">
+                未來高階 RAG 架構的研發關鍵，不再只是發明更龐大複雜的檢索算法，而是為 LLM Agent 打造一個能讓其<strong>自主探索、逐步搜證並能高效熔斷</strong>的 Retrieval Interface。
+              </p>
+            </div>
+          </div>
+
+          <!-- Slide 30: Special Full-Page Report -->
+          <div class="slide" data-slide-num="30" data-accent="var(--accent-cyan)">
+            <div class="slide-title-area">
+              <h2>特別頁：完整專業報告</h2>
+              <div class="claim">第 30 頁起切換為完整頁面模式，不套用前述 16:9 投影片框架。</div>
+            </div>
+            <div class="panel panel-accent-cyan" style="padding: 18px 22px;">
+              <p style="font-size: 14px; line-height: 1.5; color: var(--text-muted);">
+                已切換到完整頁模式：<code>a-rag-professional-report.html</code>
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 進度指示條 -->
+      <div class="bottom-progress-bar" id="progressBar"></div>
+      <div class="bottom-progress-bar" id="progressBar"></div>
+
+    </div>
+
+    <!-- 第 30 頁全螢幕特別頁 -->
+    <div class="special-page-overlay" id="specialPageOverlay" aria-hidden="true">
+      <button class="special-page-back" onclick="goToSlide(29)">返回投影片</button>
+      <iframe
+        id="specialPageFrame"
+        class="special-page-frame"
+        src="./a-rag-professional-report.html"
+        title="A-RAG Professional Report"
+        loading="eager">
+      </iframe>
+    </div>
+
+    <!-- 懸浮控制 HUD (移到 Sandbox 外側，不受 16:9 限制) -->
+    <div class="hud-controls" id="hudControls">
+      <button class="hud-btn" id="sidebarToggle" title="簡報大綱" onclick="toggleSidebar()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24">
+          <path d="M3,4H21V6H3V4M3,9H21V11H3V9M3,14H21V16H3V14M3,19H21V21H3V19Z" />
+        </svg>
+      </button>
+      <div class="hud-divider"></div>
+      <button class="hud-btn" id="prevBtn" title="上一頁 (Arrow Left)" onclick="prevSlide()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24">
+          <path d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" />
+        </svg>
+      </button>
+      <button class="hud-btn" id="nextBtn" title="下一頁 (Arrow Right / Space)" onclick="nextSlide()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24">
+          <path d="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" />
+        </svg>
+      </button>
+      <div class="hud-divider"></div>
+      <div class="hud-progress-info" id="hudProgress">01 / 30</div>
+      <div class="hud-divider"></div>
+      <button class="hud-btn" id="themeToggle" title="切換深淺模式" onclick="toggleTheme()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" id="themeIcon" viewBox="0 0 24 24">
+          <path
+            d="M12,18C11.11,18 10.26,17.8 9.5,17.45C11.56,16.5 13,14.42 13,12C13,9.58 11.56,7.5 9.5,6.55C10.26,6.2 11.11,6 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31L23.31,12L20,8.69Z" />
+        </svg>
+      </button>
+      <button class="hud-btn" id="notesToggle" title="報告人備忘錄" onclick="toggleNotes()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24">
+          <path
+            d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,19H5V5H19V19M7,7H17V9H7V7M7,11H17V13H7V11M7,15H14V17H7V15Z" />
+        </svg>
+      </button>
+      <button class="hud-btn" id="laserToggle" title="虛擬雷射筆 (K)" onclick="toggleLaser()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24">
+          <path
+            d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z" />
+        </svg>
+      </button>
+      <button class="hud-btn" id="fullscreenToggle" title="全螢幕播放" onclick="toggleFullscreen()">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24">
+          <path d="M5 10h2V7h3V5H5v5z M19 5h-5v2h3v3h2V5z M19 14h-2v3h-3v2h5v-5z M5 14h2v3h3v2H5v-5z" />
+        </svg>
+      </button>
+      <div class="hud-divider"></div>
+      <button class="hud-btn hud-toggle-minimize-btn" id="minimizeBtn" title="最小化控制列"
+        onclick="toggleMinimizeHUD(event)">
+        <svg style="width: 20px; height: 20px; fill: currentColor;" id="minimizeIcon" viewBox="0 0 24 24">
+          <path
+            d="M12,2A10,10 0 1,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 1,0 20,12A8,8 0 0,0 12,4M12,11H8V13H12V16L16,12L12,8V11Z" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // 投影片內容定義 (大綱與報告人中文、台語備忘錄)
+    const slidesData = [
+      {
+        num: 1,
+        title: "A-RAG 簡報封面",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告開場白 (台華語雙修指引)</h4>
+            <p><strong>台語導言：</strong>各位老師、各位同學，大家敖力早。今天我要報告的論文題目是「A-RAG」，主題是講如何讓大模型自主檢索，提高精確度又省 token。</p>
+            <p><strong>國語切換：</strong>這篇論文是在今年 2026 年 2 月最新發表的 ArXiv 論文。主要的題目是 A-RAG。核心研究在於我們如何將傳統固定、繁複的 RAG 檢索管線，重塑為對 Agent 友善的層級化資訊檢索介面。</p>
+          </div>
+          <div class="notes-section">
+            <h4>💡 本頁重點提煉</h4>
+            <p>- <strong>報告人：</strong>吳翊銘</p>
+            <p>- <strong>一句話亮點：</strong>這篇論文的貢獻不是發明了更複雜的檢索算法或改進向量模型，而是「改變了大語言模型與知識庫之間的互動協議」。</p>
+          </div>
+        `
+      },
+      {
+        num: 2,
+        title: "研究背景：RAG 的角色",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>大家對 RAG（檢索增強生成）都很熟悉。它主要是將外部文檔作為 Context 餵給 LLM，以解決模型訓練後的知識庫過時及「一本正經胡說八道」（幻覺）的問題。</p>
+            <p>然而，傳統 RAG 有一個致命傷：<strong>檢索器（Retriever）與大語言模型（LLM）是脫節的。</strong> 檢索器是個死板的管線，大模型無法控制它。這會導致「檢索錯誤污染 Context」或「塞了太多廢話 Token 浪費成本」的雙重困境。</p>
+          </div>
+        `
+      },
+      {
+        num: 3,
+        title: "傳統 RAG 與現有 Paradigms 對比",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>請大家看這張對比表，我們把現有的幾種 RAG 模式做個整理。第一種是 <strong>Naive RAG</strong>，單次檢索，最容易有幻覺和冗餘；第二種是 <strong>Active RAG</strong>，例如 FLARE，雖然能動態決定何時檢索，但它每次檢索都是獨立的，LLM 沒辦法自主疊代篩選。</p>
+            <p>因此，我們需要一個全新的架構：讓 LLM 扮演 <strong>Active Agent</strong>，手握多種不同的檢索工具，能自主決定什麼時候調用什麼工具，這就是 A-RAG 誕生的核心起點。</p>
+          </div>
+        `
+      },
+      {
+        num: 4,
+        title: "大模型自主檢索的局限性",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>既然要讓 LLM 扮演 Active Agent，那我們直接用現有的 Tool-use 機制不就成了？</p>
+            <p>答案是：沒那麼簡單。傳統的 <strong>Frontier Model tool-use</strong>（例如 ChatGPT 的 Function Calling）如果直接對接文檔檢索，會面臨兩個核心瓶頸：</p>
+            <p>1. <strong>檢索資源不對等：</strong>大模型在長文檔中很容易「迷失在百萬字中」(Lost in the Middle)。</p>
+            <p>2. <strong>隱形 token 成本爆炸：</strong>多步 ReAct 疊代會重複將歷史對話和大量無用 Snippet 塞進 Context，導致 API 費用和運算量呈斷崖式暴增。</p>
+          </div>
+        `
+      },
+      {
+        num: 5,
+        title: "核心研究問題 (RQ)",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>基於上述局限性，本篇論文提出了最核心的研究問題：</p>
+            <p><strong>「我們如何能為 LLM Agent 重新設計一個友善、高效的資訊檢索介面 (Retrieval Interface)，使其既能維持極高的推理準確度，又能顯著控制 Token 預算？」</strong></p>
+            <p>這需要改變檢索介面的協議，從原本粗放的一次性 Top-K 給予，轉向精細的階層化主動獲取協定。</p>
+          </div>
+        `
+      },
+      {
+        num: 6,
+        title: "A-RAG 階層式檢索介面概覽",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>這張圖是 A-RAG 的架構概覽。它最核心的突破，在於提供了一個 <strong>Hierarchical Retrieval Interface (階層式檢索介面)</strong>。大模型作為 Agent，不再直接面對百萬字的原始文檔，而是面對一組精心封裝的層級化工具集：</p>
+            <p>包括第一層 <code>keyword_search</code>（快速精確定位）、第二層 <code>semantic_search</code>（模糊語意篩選）、以及最底層的 <code>chunk_read</code>（完整讀取選定區塊）。透過這三個工具的自主協調組合，Agent 能以極小的 token 消耗逐步搜證。</p>
+          </div>
+        `
+      },
+      {
+        num: 7,
+        title: "階層式索引結構 (Hierarchical Index)",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>為了支持上述三個工具，底層必須先建立 <strong>Hierarchical Index (階層式索引)</strong>。我們把整份文檔分成好幾個 Doc-level 檔案，然後將每個文檔切片成 Chunk。在索引建構時，我們同時抽取 <code>Entity Keywords</code> 建立倒排索引，並計算 Chunk Embedding 建立語意向量索引。</p>
+            <p>這種多重維度的索引結構，正是底層能夠支援大模型進行精準匹配與模糊探索的物理基礎。</p>
+          </div>
+        `
+      },
+      {
+        num: 8,
+        title: "工具一：Keyword Search (關鍵字檢索)",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>第一個工具是 <code>keyword_search</code>。傳統 RAG 幾乎全用向量語意檢索，但語意檢索很難搞定人名、專有名詞、特定產品型號或代號的精確匹配。A-RAG 透過底層倒排索引，讓模型能用最傳統、最精確的 Keyword 精準定位到文檔或 Chunk。</p>
+            <p>這能有效防止向量檢索「似是而非」的模糊推薦，省去無謂的語意篩選 token。</p>
+          </div>
+        `
+      },
+      {
+        num: 9,
+        title: "工具二：Semantic Search (語意檢索)",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>第二個工具是大家熟悉的 <code>semantic_search</code>。當 Agent 需要進行跨主題、概念性或模糊查詢時，它能下發 query 給語意檢索器，拿回相似度最高的前 K 個 Chunk Snippet（摘要）。</p>
+            <p>請注意，此時 Agent 拿回來的<strong>只是 snippet (摘要描述)</strong>，非常短暫，主要用來做探索和定位，而不是把整段正文直接塞進去，這也是控制 Context 體積的核心策略。</p>
+          </div>
+        `
+      },
+      {
+        num: 10,
+        title: "工具三：Chunk Read (正文完整閱讀)",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>第三個工具是 <code>chunk_read</code>。這是 A-RAG 階層化架構最關鍵的靈魂。大模型在透過 keyword 或 semantic 探索到可能有答案的 Chunk ID 後，可以自主決定是否調用 <code>chunk_read</code> 來載入<strong>該塊 Chunk 的完整正文</strong>進行深入研讀與推理。</p>
+            <p>「只在確定有答案時才讀取完整本文」的 Progressive Loading 設計，正是 A-RAG 能節省近十倍 Token 消耗的科學奧秘。</p>
+          </div>
+        `
+      },
+      {
+        num: 11,
+        title: "大模型自主探索與決策循環",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引 (中文版 Agent Loop 說明)</h4>
+            <p><strong>報告引導：</strong>請評審與老師看這張翻譯成中文的 Agent 決策循環圖。這是一個精細的 ReAct 主動探索流程。給定一個複雜問題後，模型會進入 <strong>Thought-Action-Observation</strong> 的探索環節。</p>
+            <p>它可以自主選擇進行關鍵字精確搜尋，或語意模糊檢索，評估拿到的 snippet 後，若覺得不夠，再深入調用 <code>chunk_read</code> 讀取全文。一旦收集到足夠的證據，它就會進入最後的 Answer 階段並跳出循環，或在超出 Token 預算時觸加安全熔斷機制。</p>
+          </div>
+        `
+      },
+      {
+        num: 12,
+        title: "論文官方實驗設置",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>在論文官方的實驗中，作者選用了 MuSiQue、HotpotQA、2WikiMultiHop 以及 Medical 和 Novel 等資料集。評測的 Baseline 包括了 Naive RAG、FLARE 以及 A-RAG 自身的不同消融變體。</p>
+            <p>底層的大語言模型在原始論文中，主要使用的是 GPT-5-mini 作為探索主體，而這也是我們後續進行本地重現與追蹤實驗的關鍵比較對照組。</p>
+          </div>
+        `
+      },
+      {
+        num: 13,
+        title: "官方論文主結果：LLM Accuracy",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>這是官方論文最核心的準確率數據。請大家看向表格最後一列：<strong>A-RAG Full 完勝了所有其他架構。</strong></p>
+            <p>特別是在難度極高的多跳推理資料集 MuSiQue 上，其 LLM Accuracy 從 Naive RAG 的 <strong>52.8% 暴漲到了 74.1%</strong>；在 2Wiki 基準測試中，精確度更從 <strong>50.2% 攀升至 89.7%</strong>！這極大地證明了自主檢索介面的科研價值。</p>
+          </div>
+        `
+      },
+      {
+        num: 14,
+        title: "消融實驗、Scaling 與 Token 效率",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>這頁呈現了官方消融分析與 Token 效率數據：</p>
+            <p>1. <strong>工具消融</strong>：拿掉關鍵字、語意或 chunk 讀取任何一層，表現都會出現劇烈下滑，印證了 hierarchical 機制的必要性。</p>
+            <p>2. <strong>Test-time Scaling</strong>：隨著允許的推理步數 (max_loops) 提高，準確率還能進一步攀升。</p>
+            <p>3. <strong>Token 效率</strong>：A-RAG Naive 消耗了大量 token，而 A-RAG Full 消耗的 token 僅為 Naive 的同等數量級，比 Naive 省下了<strong>近 10 倍的 Token 成本</strong>！</p>
+          </div>
+        `
+      },
+      {
+        num: 16,
+        title: "本地實驗：資料集與實驗範圍",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引 (台華語雙修)</h4>
+            <p><strong>台語口語：</strong>各位老師、各位同學，下面我們要入去咱本地的官方實驗結果。首先，咱是先用三個 multi-hop QA 的資料集，每一組挑選出 100 題建立一個會當穩定重跑的範圍。</p>
+            <p><strong>國語說明：</strong>我們選用的三個資料集分別是 MuSiQue、HotpotQA 和 2Wiki。選用理由是，MuSiQue 具有最典型的多跳推理，最能檢驗 A-RAG 主動探索的優勢；HotpotQA 則是為了直接和論文主表對齊；2Wiki 則是測試跨實體推理與 chunk_read 對完整證據的補充。</p>
+          </div>
+          <div class="notes-section">
+            <h4>💡 核心要點提煉</h4>
+            <p>- <strong>控制變因：</strong>先不引入 Medical / Novel 等其他類型的任務，控制第一輪變因在 Open-domain multi-hop QA。</p>
+            <p>- <strong>定位：</strong>以 100 題規模進行 official repo sanity 驗證，不宣稱完整大規模重跑。</p>
+          </div>
+        `
+      },
+      {
+        num: 17,
+        title: "本地實驗：官方 GitHub 資料流程",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>請大家看這張流程圖，這是本次實驗直接套用官方 A-RAG repo 的資料結構與腳本命令。在輸入層，我們有包含全文切片的 <code>chunks.json</code> 和問題集的 <code>questions.json</code>。接著我們透過 MiniLM 執行 <code>build_index.py</code> 建立語意向量索引。</p>
+            <p>之後，我們使用 <code>batch_runner.py</code> 調用本地 Gemini 3.5 逐題執行完整的 Agent Loop 探索，最後使用 <code>eval.py</code> 產出準確率報告。所有的修改僅限於 Endpoint 連接與 subset 規模，資料流程完全保留官方的嚴謹設計。</p>
+          </div>
+        `
+      },
+      {
+        num: 18,
+        title: "本地實驗：設定與參數",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>在這頁，我們展示了本次實驗所採用的核心 Local Configuration。我們的 Base LLM 採用的是最新前沿模型 google/gemini-3.5-flash，向量模型採用 all-MiniLM-L6-v2。為了解決多跳推理的深度問題，我們設定最大循環 (max_loops) 為 8，最大 Token 預算設定為 32k。</p>
+            <p>這裡有一個重點需要跟大家澄清，我們表格中的 Retrieved tokens 代表的是 Agent 在多輪對話中主動從文檔庫「加載進 Context」的總量，這能代表檢索效率，而不是 API 全部的 Input/Output Token Breakdown。</p>
+          </div>
+        `
+      },
+      {
+        num: 19,
+        title: "本地結果：LLM Accuracy 對照",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引 (高亮高光數據)</h4>
+            <p><strong>台語高亮：</strong>各位請看這張主結果對照表，最後一橫列是咱本地 Gemini 跑出來的結果。咱的 A-RAG Full 在 HotpotQA 和 2Wiki 攏達到 <strong>97.0%</strong> 的極高準確率，MuSiQue 也有 <strong>87.88%</strong>！</p>
+            <p><strong>國語切換：</strong>對比論文大表中的數據，這三個資料集的 LLM Accuracy 在本地 subset 上不僅完全對齊了論文同量級的表現，而且因為 Gemini 3.5 Flash 強大的多輪推理力，數值甚至更為優異。這再次驗證了 <strong>A-RAG Full (多介面組合) > Naive (單一檢索)</strong> 的科學規律。</p>
+          </div>
+        `
+      },
+      {
+        num: 20,
+        title: "本地結果：Contain 與效率指標",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>這張表呈現了除了 Accuracy 外的多維度效率指標。我們可以看到，MuSiQue 任務確實最為艱難，平均需要花費 <strong>7.31 次 Agent Loop</strong>，平均檢索的 tokens 超過 4,200，單題花費約 0.027 美元。</p>
+            <p>相對而言，HotpotQA 與 2Wiki 僅需大約 5 輪即可迅速收斂，每題花費也大約只有 0.013 美元。這說明在主動探索架構下，Agent 探索所付出的步數與成本，跟任務本身需要多少跳 (hops) 推理完全成正比。</p>
+          </div>
+        `
+      },
+      {
+        num: 21,
+        title: "本地結果：MuSiQue 消融研究",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>為了深入探索 A-RAG 這三個工具是否都有用，我們在難度最高的 MuSiQue 資料集上進行了消融實驗。請看這張表格：當我們把 Keyword、Semantic 或 Chunk_read 任何一個工具拿掉，它的 LLM Accuracy 都出現了非常劇烈的下滑。</p>
+            <p>特別是拿掉 Keyword search（降到 67.68%）或拿掉 Chunk_read（降到 65.66%）時，傷害最大。雖然不讀取 chunk 僅讀 snippet 會讓 token 大幅變便宜，但代價是準確率大幅崩潰。這證明了 A-RAG 的優勢是來自<strong>多層級工具介面的互補組合</strong>，三個工具都不是裝飾品。</p>
+          </div>
+        `
+      },
+      {
+        num: 22,
+        title: "本地結果：數據視覺化圖形",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>在這頁，我們以直觀的柱狀圖來為大家總結我們本地實驗的兩大結論。左邊是我們 A-RAG Full 在三個資料集上的極致表現，三個資料集 Full 均接近或超過了 88% 的超高準確率。</p>
+            <p>右邊則是 MuSiQue 資料集的消融落差對比，可以非常清楚地看見，只要拿掉任何一個組件，柱狀圖的準確率立刻出現斷崖式的下跌。這為我們的報告提供了極佳的視覺化數據支撐。</p>
+          </div>
+        `
+      },
+      {
+        num: 23,
+        title: "延伸驗證：三個可測的提問",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引 (台華語雙修指引)</h4>
+            <p><strong>台語導言：</strong>各位老師各位同學，下面咱要針對論文的限制，提出三項延伸驗證。咱不是干焦用喙講講咧，咱是用可重現的 100 題 MuSiQue 實驗來同場對照！</p>
+            <p><strong>國語說明：</strong>在這頁中，我們將質疑轉化為三個具體、可量化的科學提問：Q1 是檢索資源是否公平？Naive RAG 如果拿到長 context，是否能追上 A-RAG？Q2 是 Context Efficiency 是否低估了真實處理的 input tokens 成本？Q3 是 baseline 是否被刻意弱化？如果我們用 BM25 + vector hybrid 作為 naive baseline，A-RAG 還有多少優勢？</p>
+          </div>
+        `
+      },
+      {
+        num: 24,
+        title: "表 1：六組方法總比較",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p><strong>台語口語：</strong>咱來看這張最關鍵的總表。這張大表直接將六組方法攏放做伙，包含 accuracy、retrieved tokens，閣有咱獨家補算的真實處理 input tokens 以及美金成本。</p>
+            <p><strong>國語指引：</strong>大家看最後一列 A-RAG Full，它的 LLM Accuracy 達到最高（85.0%），但與此同時，它的真實 input tokens 處理量也是高達 30,400.2，單題美金成本 0.027 元也是最高。這張大表完整呈現了精度、token 數量與金錢成本之間的 trade-off，我們接下來會依序回答三個提問。</p>
+          </div>
+        `
+      },
+      {
+        num: 25,
+        title: "表 2：Q1 長 context 是否就夠？",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p><strong>台語口語：</strong>Q1 是問「係毋係 context 愈長就愈準？」如果只是字數多就準，那把 22,441.0 token 一次塞給 Long-context Naive，伊應該嘛愛好。但是大家看：伊的準確率只有 24.0%！</p>
+            <p><strong>國語指引：</strong>這說明了單純的 context 長度並不是高準確率的充分條件。Long-context Naive 即使拿到了 22,441.0 token 的內容，因為缺乏 Agent 的多輪迭代探索和逐步搜證，其 Accuracy 僅僅從 21.0% 微幅上升到 24.0%。這證明 A-RAG 85.0% 的高表現並非僅是 More Context 的紅利，而是 multi-step reasoning 的成果。</p>
+          </div>
+        `
+      },
+      {
+        num: 26,
+        title: "表 3：Q2 真實 token 成本",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p><strong>台語口語：</strong>Q2 是真實的 token 成本。論文講 A-RAG 真省 token，捞出來 unique 只有 4,247.9。但事實上，因為多輪 ReAct 會重複將歷史對話傳給 LLM，咱實際上是處理了 30,400.2 的 input token，放大倍數高達 7.2 倍！</p>
+            <p><strong>國語指引：</strong>這是一個極具科研警示意義的發現：Context Efficiency 並不能完全等同於 Compute Efficiency，因為多步決策時存在大量的隱形運算量。未來我們做 RAG 研究，不能只報 retrieved tokens，更應同時呈報總 API 呼叫次數、實際 processed tokens 和真正的花費成本。</p>
+          </div>
+        `
+      },
+      {
+        num: 27,
+        title: "表 4：Q3 Hybrid baseline 是否追上？",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p><strong>台語口語：</strong>最後一項提問，咱是針對 Naive baseline 做補強。如果 baseline 使用 BM25 加上向量的 Hybrid 策略，結果按怎？</p>
+            <p><strong>國語指引：</strong>結果顯示，Hybrid baseline 的確非常強大，它一口氣將 Accuracy 從 21.0% 拉升到 47.0%，這證明多跳 QA 任務中關鍵字匹配起到了極大效果。但值得注意的是，A-RAG Full 的 85.0% 依然大幅領先 Hybrid Baseline 多達 38.0%！這代表多步決策探索依然具有不可替代的科學增益。</p>
+          </div>
+        `
+      },
+      {
+        num: 28,
+        title: "延伸驗證：實作結果小結",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p><strong>台語口語：</strong>咱來做本地實作結果的收尾。首先，官方 repo 在 MuSiQue、HotpotQA 和 2Wiki 上全數 100% 穩定跑通，這證明實驗的重現性是非常可靠的。</p>
+            <p><strong>國語指引：</strong>其次，在 Gemini 3.5 Flash 支援下，本地 subset 獲得了更高且對齊論文同量級的 Accuracy；第三，消融實驗進一步印證了 Keyword 精準定位與 Chunk 正文完整閱讀缺一不可，三個工具共同支持了 A-RAG 的科學價值。</p>
+          </div>
+        `
+      },
+      {
+        num: 29,
+        title: "延伸驗證：實驗驗證結論",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告總結 (台華語雙修)</h4>
+            <p><strong>台語口語：</strong>最後，這四張延伸驗證表，不只解答了我們的疑惑，更讓整個 critique 變成有實際數據支持、可以深刻討論的科學研究！</p>
+            <p><strong>國語指引：</strong>我們的延伸驗證並不是否定 A-RAG 的價值，而是指出未來高階 RAG 的評估需要有更強的 baseline 和真實 processed-token 成本，這樣 accuracy gain 才能被客觀、公允地合理解釋。這就是我們團隊這次的核心貢獻。謝謝各位評審與老師！</p>
+          </div>
+        `
+      },
+      {
+        num: 15,
+        title: "原始論文限制、未來方向與結論",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>最後，我們來回顧原始論文的限制與未來科研方向。目前的 A-RAG 對於工具的 Description 描述設計以及超旗艦前沿模型（GPT-5 Full 等）的驗證仍有未盡之處。未來，我們可以朝「Token 預算感知代理」方向努力，讓 Agent 能平衡精確度與 Token 開銷。</p>
+            <p><strong>總結 Takeaway：</strong>未來的 RAG 技術，重點在於給模型自主探查、逐步索取證據的<strong>主動介面</strong>，而非一味堆疊被動的檢索演算法。謝謝大家！</p>
+          </div>
+        `
+      },
+      {
+        num: 30,
+        title: "特別頁：完整專業報告",
+        notes: `
+          <div class="notes-section">
+            <h4>🗣 報告指引</h4>
+            <p>這一頁為特別展示頁，已切換成完整頁模式，直接展示 a-rag-professional-report.html 的原始版面，不再受 16:9 投影片框架限制。</p>
+          </div>
+        `
+      }
+    ];// 全域狀態變數
+    let currentSlide = 1;
+    const totalSlides = 30;
+    let isDarkTheme = false;
+    let showNotes = false;
+    let laserMode = false;
+    let lastMouseX = window.innerWidth / 2;
+    let lastMouseY = window.innerHeight / 2;
+
+    // 取得 DOM 元素
+    const slidesWrapper = document.getElementById("slidesWrapper");
+    const hudProgress = document.getElementById("hudProgress");
+    const headerPageNum = document.getElementById("headerPageNum");
+    const progressBar = document.getElementById("progressBar");
+    const themeToggle = document.getElementById("themeToggle");
+    const themeIcon = document.getElementById("themeIcon");
+    const notesDrawer = document.getElementById("notesDrawer");
+    const notesContent = document.getElementById("notesContent");
+    const sidebarIndex = document.getElementById("sidebarIndex");
+    const sidebarOverlay = document.getElementById("sidebarOverlay");
+    const sidebarList = document.getElementById("sidebarList");
+    const slideSandbox = document.getElementById("slideSandbox");
+    const laserDot = document.getElementById("laserDot");
+    const deckAccentBar = document.getElementById("deckAccentBar");
+    const zoomOverlay = document.getElementById("zoomOverlay");
+    const specialPageOverlay = document.getElementById("specialPageOverlay");
+    const slidesDataSorted = [...slidesData].sort((a, b) => a.num - b.num);
+
+    // 初始化簡報
+    function initPresentation() {
+      // 1. 建立側邊欄大綱清單
+      sidebarList.innerHTML = slidesDataSorted.map(slide => `
+        <li class="sidebar-item ${slide.num === 1 ? 'active' : ''}" data-num="${slide.num}" onclick="goToSlide(${slide.num})">
+          <span class="num">${String(slide.num).padStart(2, '0')}</span>
+          <span>${slide.title}</span>
+        </li>
+      `).join('');
+
+      // 2. 顯示第一頁的報告備忘錄
+      updateNotes();
+
+      // 3. 綁定自適應視窗縮放
+      window.addEventListener("resize", resizePresentation);
+      resizePresentation();
+
+      // 4. 鍵盤事件監聽
+      document.addEventListener("keydown", handleKeyDown);
+
+      // 5. 滑鼠雷射筆定位
+      document.addEventListener("mousemove", handleMouseMove);
+
+      // 6. 手勢滑動支援
+      let touchStartX = 0;
+      let touchEndX = 0;
+      document.addEventListener('touchstart', e => {
+        touchStartX = e.changedTouches[0].screenX;
+      });
+      document.addEventListener('touchend', e => {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe(touchStartX, touchEndX);
+      });
+
+      // 7. 更新進度條
+      updateProgress();
+
+      // 8. 初始化 HUD 拖曳與折疊綁定
+      initHUDDraggable();
+
+      // 9. 預設不啟用特別頁模式
+      setSpecialPageMode(false);
+    }
+
+    // 視窗自適應縮放演算法
+    function resizePresentation() {
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      const targetRatio = 16 / 9;
+
+      let scale = 1;
+
+      // 計算最適合螢幕的縮放比例，保留 16:9 沙盒
+      if (windowWidth / windowHeight > targetRatio) {
+        // 視窗較寬，高度決定縮放
+        scale = (windowHeight * 0.95) / 675;
+      } else {
+        // 視窗較窄，寬度決定縮放
+        scale = (windowWidth * 0.95) / 1200;
+      }
+
+      // 限制最大縮放不超過 1.1，防止過度模糊
+      scale = Math.min(scale, 1.1);
+
+      slideSandbox.style.transform = `scale(${scale})`;
+    }
+
+    function setSpecialPageMode(enabled) {
+      if (!specialPageOverlay) return;
+
+      specialPageOverlay.classList.toggle("active", enabled);
+      specialPageOverlay.setAttribute("aria-hidden", String(!enabled));
+
+      const hudControls = document.getElementById("hudControls");
+      const progressBars = document.querySelectorAll(".bottom-progress-bar");
+
+      if (enabled) {
+        notesDrawer.classList.remove("open");
+        sidebarIndex.classList.remove("open");
+        sidebarOverlay.classList.remove("open");
+      }
+
+      if (hudControls) {
+        hudControls.style.display = enabled ? "none" : "";
+      }
+      progressBars.forEach((bar) => {
+        bar.style.display = enabled ? "none" : "";
+      });
+    }
+
+    // 切換投影片
+    function updateSlide(prevNum, nextNum) {
+      const slides = document.querySelectorAll(".slide");
+
+      // 找到當前投影片與目標投影片
+      const prevSlide = Array.from(slides).find(s => s.getAttribute("data-slide-num") == prevNum);
+      const nextSlide = Array.from(slides).find(s => s.getAttribute("data-slide-num") == nextNum);
+
+      if (prevSlide) {
+        prevSlide.classList.remove("active");
+        prevSlide.classList.add("previous-exit");
+        setTimeout(() => {
+          prevSlide.classList.remove("previous-exit");
+        }, 500);
+      }
+
+      if (nextSlide) {
+        nextSlide.classList.add("active");
+
+        // 根據投影片定義的動態顏色調整左側漸變豎條
+        const accentColor = nextSlide.getAttribute("data-accent");
+        deckAccentBar.style.background = `linear-gradient(180deg, ${accentColor}, var(--accent-blue), var(--accent-purple))`;
+      }
+
+      // 更新 HUD 與頁首計數器
+      const formattedNum = String(nextNum).padStart(2, '0');
+      hudProgress.textContent = `${formattedNum} / ${totalSlides}`;
+      headerPageNum.textContent = `${formattedNum} / ${totalSlides}`;
+
+      // 更新側邊欄高亮
+      document.querySelectorAll(".sidebar-item").forEach(item => {
+        if (item.getAttribute("data-num") == nextNum) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+
+      // 更新備忘錄
+      updateNotes();
+
+      // 更新進度條
+      updateProgress();
+
+      // 第 30 頁切換為完整頁模式
+      setSpecialPageMode(nextNum === 30);
+
+      // 如果有 Slide 14，執行其進度條填充動畫
+      if (nextNum == 14) {
+        setTimeout(() => {
+          document.querySelectorAll(".scaling-bar-fill").forEach(fill => {
+            const widthStr = fill.style.width;
+            fill.style.width = "0%";
+            setTimeout(() => {
+              fill.style.width = widthStr;
+            }, 100);
+          });
+        }, 100);
+      }
+    }
+
+    // 下一頁
+    function nextSlide() {
+      if (currentSlide < totalSlides) {
+        const prev = currentSlide;
+        currentSlide++;
+        updateSlide(prev, currentSlide);
+      }
+    }
+
+    // 上一頁
+    function prevSlide() {
+      if (currentSlide > 1) {
+        const prev = currentSlide;
+        currentSlide--;
+        updateSlide(prev, currentSlide);
+      }
+    }
+
+    // 直接跳轉
+    function goToSlide(num) {
+      if (num >= 1 && num <= totalSlides && num !== currentSlide) {
+        const prev = currentSlide;
+        currentSlide = num;
+        updateSlide(prev, currentSlide);
+        // 如果側邊欄開啟，跳轉後自動關閉
+        sidebarIndex.classList.remove("open");
+        sidebarOverlay.classList.remove("open");
+      }
+    }
+
+    function minimizeHUD() {
+      isHUDMinimized = true;
+      const hud = document.getElementById("hudControls");
+      hud.classList.add("minimized");
+
+      const minimizeBtn = document.getElementById("minimizeBtn");
+
+      // 使用 100% 相容的 stroke 外框線路繪製精緻的單一菱形
+      document.getElementById("minimizeIcon").innerHTML = `<path d="M12,6L18,12L12,18L6,12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>`;
+      minimizeBtn.title = "展開控制列";
+    }
+
+    function expandHUD() {
+      isHUDMinimized = false;
+      const hud = document.getElementById("hudControls");
+
+      // 1. 記錄展開前的當前實體位置與視窗尺寸
+      const rectBefore = hud.getBoundingClientRect();
+      const currentLeft = rectBefore.left;
+      const currentTop = rectBefore.top;
+
+      // 2. 暫時關閉 transition 並移除 minimized 以便精確測量展開後的最終尺寸
+      const originalTransition = hud.style.transition;
+      hud.style.transition = "none";
+      hud.classList.remove("minimized");
+
+      // 3. 讀取展開後的真實寬高
+      const rectAfter = hud.getBoundingClientRect();
+      const expandedWidth = rectAfter.width;
+      const expandedHeight = rectAfter.height;
+
+      // 4. 還原 minimized 狀態以讓隨後的 CSS 展開過渡動畫能正常啟動
+      hud.classList.add("minimized");
+      hud.offsetHeight; // 強制重繪 (Reflow)
+
+      // 5. 恢復 transition
+      hud.style.transition = originalTransition;
+
+      // 6. 計算安全的邊界限制位置（考慮 12px 的邊緣留白）
+      const screenW = window.innerWidth;
+      const screenH = window.innerHeight;
+
+      let baseLeft = parseFloat(hud.style.left);
+      if (isNaN(baseLeft)) baseLeft = currentLeft;
+      let baseTop = parseFloat(hud.style.top);
+      if (isNaN(baseTop)) baseTop = currentTop;
+
+      // 確保展開後的 HUD 完全落在可視區域內，左右與上下留有至少 12px 的安全間距
+      const targetLeft = Math.max(12, Math.min(baseLeft, screenW - expandedWidth - 12));
+      const targetTop = Math.max(12, Math.min(baseTop, screenH - expandedHeight - 12));
+
+      // 7. 同步執行展開與平移動畫
+      hud.classList.remove("minimized");
+
+      // 確保是 fixed 定位且清除 transform 居中，改以絕對 left/top 作為定位基準
+      hud.style.position = "fixed";
+      hud.style.bottom = "auto";
+      hud.style.transform = "none";
+      hud.style.margin = "0";
+
+      hud.style.left = targetLeft + "px";
+      hud.style.top = targetTop + "px";
+
+      // 同步更新拖曳系統的當前與目標座標，確保下次拖曳無縫接軌
+      hudTargetLeft = targetLeft;
+      hudTargetTop = targetTop;
+      hudCurrentLeft = targetLeft;
+      hudCurrentTop = targetTop;
+
+      const minimizeBtn = document.getElementById("minimizeBtn");
+      // 切換回折疊橫線圖標
+      document.getElementById("minimizeIcon").innerHTML = `<path d="M12,2A10,10 0 1,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 1,0 20,12A8,8 0 0,0 12,4M12,11H8V13H12V16L16,12L12,8V11Z"/>`;
+      minimizeBtn.title = "最小化控制列";
+    }
+
+    // 更新備忘錄內容
+    function updateNotes() {
+      const currentData = slidesData.find(s => s.num === currentSlide);
+      if (currentData) {
+        notesContent.innerHTML = currentData.notes;
+      }
+    }
+
+    // 更新進度條與底部進度
+    function updateProgress() {
+      const percent = ((currentSlide - 1) / (totalSlides - 1)) * 100;
+      progressBar.style.width = `${percent}%`;
+    }
+
+    // 鍵盤操控
+    function handleKeyDown(e) {
+      if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === "Escape") {
+        if (currentSlide === 30) {
+          goToSlide(29);
+          return;
+        }
+        // 關閉側邊欄與抽屜
+        sidebarIndex.classList.remove("open");
+        sidebarOverlay.classList.remove("open");
+        notesDrawer.classList.remove("open");
+        closeZoom();
+      } else if (e.key === "Home") {
+        goToSlide(1);
+      } else if (e.key === "End") {
+        goToSlide(totalSlides);
+      } else if (e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        toggleLaser();
+      }
+    }
+
+    // 手勢滑動
+    function handleSwipe(startX, endX) {
+      const threshold = 50;
+      if (startX - endX > threshold) {
+        nextSlide(); // 向左滑，下一頁
+      } else if (endX - startX > threshold) {
+        prevSlide(); // 向右滑，上一頁
+      }
+    }
+
+    // 雷射筆移動
+    function handleMouseMove(e) {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      if (laserMode || isMouseDownLaser) {
+        laserDot.style.left = `${lastMouseX}px`;
+        laserDot.style.top = `${lastMouseY}px`;
+      }
+    }
+
+    // 切換側邊欄大綱
+    function toggleSidebar() {
+      sidebarIndex.classList.toggle("open");
+      sidebarOverlay.classList.toggle("open");
+    }
+
+    // 切換備忘錄抽屜
+    function toggleNotes() {
+      showNotes = !showNotes;
+      notesDrawer.classList.toggle("open", showNotes);
+      document.getElementById("notesToggle").classList.toggle("active", showNotes);
+    }
+
+    // 切換深淺模式
+    function toggleTheme() {
+      isDarkTheme = !isDarkTheme;
+      document.documentElement.setAttribute("data-theme", isDarkTheme ? "dark" : "light");
+      document.getElementById("themeToggle").classList.toggle("active", isDarkTheme);
+
+      // 切換圖標
+      if (isDarkTheme) {
+        themeIcon.innerHTML = `<path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4Z"/>`;
+      } else {
+        themeIcon.innerHTML = `<path d="M12,18C11.11,18 10.26,17.8 9.5,17.45C11.56,16.5 13,14.42 13,12C13,9.58 11.56,7.5 9.5,6.55C10.26,6.2 11.11,6 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31L23.31,12L20,8.69Z"/>`;
+      }
+    }
+
+
+
+    // 激活雷射筆底層樣式切換
+    function activateLaser(isActive) {
+      const laserToggleBtn = document.getElementById("laserToggle");
+      laserDot.style.opacity = isActive ? 1 : 0;
+      document.body.classList.toggle("laser-active", isActive);
+      if (laserToggleBtn) {
+        laserToggleBtn.classList.toggle("active", isActive);
+      }
+
+      if (isActive) {
+        laserDot.style.left = `${lastMouseX}px`;
+        laserDot.style.top = `${lastMouseY}px`;
+      }
+    }
+
+    // 切換虛擬雷射筆 (手動常開/關閉)
+    function toggleLaser() {
+      laserMode = !laserMode;
+      activateLaser(laserMode);
+    }
+
+    // 支援滑動點擊左鍵臨時觸發雷射筆功能
+    let isMouseDownLaser = false;
+
+    document.addEventListener("mousedown", (e) => {
+      // 僅限左鍵，且目前未開啟「常開」雷射筆模式時
+      if (e.button === 0 && !laserMode) {
+        // 避開所有 UI 面板及圖片放大層
+        const isUiClick = e.target.closest("#hudControls") ||
+          e.target.closest("#sidebarIndex") ||
+          e.target.closest("#notesDrawer") ||
+          e.target.closest("#zoomOverlay") ||
+          e.target.closest(".img-preview-box");
+
+        if (!isUiClick) {
+          isMouseDownLaser = true;
+          activateLaser(true);
+        }
+      }
+    });
+
+    document.addEventListener("mouseup", (e) => {
+      if (isMouseDownLaser) {
+        isMouseDownLaser = false;
+        activateLaser(false);
+      }
+    });
+
+    // 切換全螢幕
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    // 視窗與全螢幕邊界安全防護：防範控制列在解除全螢幕或縮小視窗時飄移到畫面外
+    function keepHUDInViewport() {
+      const hud = document.getElementById("hudControls");
+      if (!hud) return;
+
+      // 只有當控制列已被拖曳自訂位置（即 style 中有 left 與 top 設定）時才進行限制
+      if (hud.style.left && hud.style.top) {
+        const rectHUD = hud.getBoundingClientRect();
+        const screenW = window.innerWidth;
+        const screenH = window.innerHeight;
+        const margin = 12;
+
+        const hudW = rectHUD.width || 360;
+        const hudH = rectHUD.height || 54;
+
+        let currentLeft = parseFloat(hud.style.left);
+        let currentTop = parseFloat(hud.style.top);
+
+        // 限制座標在安全視窗邊界內 (保留 margin 邊距)
+        let newLeft = Math.max(margin, Math.min(currentLeft, screenW - hudW - margin));
+        let newTop = Math.max(margin, Math.min(currentTop, screenH - hudH - margin));
+
+        hud.style.left = newLeft + "px";
+        hud.style.top = newTop + "px";
+
+        // 更新平滑 LERP 平滑計算的目標點與當前點，防止慣性回彈力將控制列拉出畫面外
+        hudTargetLeft = newLeft;
+        hudTargetTop = newTop;
+        hudCurrentLeft = newLeft;
+        hudCurrentTop = newTop;
+      }
+    }
+
+    // 監聽全螢幕變化以修改 HUD 按鈕狀態與校正位置
+    document.addEventListener("fullscreenchange", () => {
+      const fsToggle = document.getElementById("fullscreenToggle");
+      if (document.fullscreenElement) {
+        fsToggle.classList.add("active");
+        fsToggle.innerHTML = `<svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2z M8 8H5v2h5V5H8v3z M14 19h2v-3h3v-2h-5v5z M16 8V5h-2v5h5V8h-3z"/></svg>`;
+      } else {
+        fsToggle.classList.remove("active");
+        fsToggle.innerHTML = `<svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24"><path d="M5 10h2V7h3V5H5v5z M19 5h-5v2h3v3h2V5z M19 14h-2v3h-3v2h5v-5z M5 14h2v3h3v2H5v-5z"/></svg>`;
+      }
+
+      // 立即校正，並在 100ms、300ms 後再次校正，確保完全回到正常視窗的可見範圍
+      keepHUDInViewport();
+      setTimeout(keepHUDInViewport, 100);
+      setTimeout(keepHUDInViewport, 300);
+    });
+
+    // 監聽視窗大小改變事件，確保控制列始終留在可見區域內
+    window.addEventListener("resize", () => {
+      keepHUDInViewport();
+    });
+
+    // Slide 3 圖表放大功能
+    function zoomImage() {
+      zoomOverlay.classList.add("open");
+    }
+
+    function closeZoom() {
+      zoomOverlay.classList.remove("open");
+    }
+
+    // HUD 拖曳與最小化為小球邏輯
+    let isHUDMinimized = false;
+    let isHUDDragging = false;
+    let hudDragStartX, hudDragStartY;
+    let hudStartLeft, hudStartTop;
+    const hudDragThreshold = 6;
+    let hudHasMoved = false;
+
+    // 慣性平滑拖曳物理變數
+    let hudTargetLeft = null;
+    let hudTargetTop = null;
+    let hudCurrentLeft = null;
+    let hudCurrentTop = null;
+    let lerpRequestId = null;
+
+    function initHUDDraggable() {
+      const hud = document.getElementById("hudControls");
+
+      hud.addEventListener("mousedown", startHUDDrag);
+      hud.addEventListener("touchstart", startHUDDrag, { passive: false });
+
+      function startLerpLoop() {
+        if (lerpRequestId) return; // 已經在運行中
+
+        function updateLerp() {
+          if (hudTargetLeft !== null && hudTargetTop !== null) {
+            // LERP 平滑插值公式：0.13 具有非常有機的「延遲跟隨」高級滑動感
+            const lerpFactor = 0.13;
+            hudCurrentLeft += (hudTargetLeft - hudCurrentLeft) * lerpFactor;
+            hudCurrentTop += (hudTargetTop - hudCurrentTop) * lerpFactor;
+
+            hud.style.left = hudCurrentLeft + "px";
+            hud.style.top = hudCurrentTop + "px";
+
+            const diffX = Math.abs(hudTargetLeft - hudCurrentLeft);
+            const diffY = Math.abs(hudTargetTop - hudCurrentTop);
+
+            // 當拖曳結束，且當前位置與目標位置極為接近時，結束物理循環，避免佔用 CPU
+            if (!isHUDDragging && diffX < 0.05 && diffY < 0.05) {
+              hud.style.left = hudTargetLeft + "px";
+              hud.style.top = hudTargetTop + "px";
+              lerpRequestId = null;
+              return;
+            }
+          }
+          lerpRequestId = requestAnimationFrame(updateLerp);
+        }
+        lerpRequestId = requestAnimationFrame(updateLerp);
+      }
+
+      function startHUDDrag(e) {
+        // 如果點擊在 expanded 按鈕上，且不是最小化按鈕，允許按鈕正常觸發，不啟動拖曳
+        const clickedBtn = e.target.closest(".hud-btn");
+        const isMinBtn = e.target.closest("#minimizeBtn");
+
+        if (clickedBtn && !isMinBtn && !isHUDMinimized) {
+          return;
+        }
+
+        isHUDDragging = true;
+        hudHasMoved = false;
+
+        const clientX = e.type === "touchstart" ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
+
+        const rectHUD = hud.getBoundingClientRect();
+
+        hudDragStartX = clientX;
+        hudDragStartY = clientY;
+
+        hudStartLeft = rectHUD.left;
+        hudStartTop = rectHUD.top;
+
+        // 初始化平滑插值系統的當前與目標點
+        hudCurrentLeft = hudStartLeft;
+        hudCurrentTop = hudStartTop;
+        hudTargetLeft = hudStartLeft;
+        hudTargetTop = hudStartTop;
+
+        // 強制使用 fixed 定位並移出 bottom 居中
+        hud.style.position = "fixed";
+        hud.style.bottom = "auto";
+        hud.style.left = hudStartLeft + "px";
+        hud.style.top = hudStartTop + "px";
+        hud.style.transform = "none";
+        hud.style.margin = "0";
+
+        hud.classList.add("dragging");
+
+        // 啟動平滑動畫幀循環
+        startLerpLoop();
+
+        if (e.type === "touchstart") {
+          document.addEventListener("touchmove", moveHUDDrag, { passive: false });
+          document.addEventListener("touchend", endHUDDrag);
+        } else {
+          document.addEventListener("mousemove", moveHUDDrag);
+          document.addEventListener("mouseup", endHUDDrag);
+        }
+
+        if (e.cancelable) e.preventDefault();
+      }
+
+      function moveHUDDrag(e) {
+        if (!isHUDDragging) return;
+
+        const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+        const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+
+        const dx = clientX - hudDragStartX;
+        const dy = clientY - hudDragStartY;
+
+        if (Math.abs(dx) > hudDragThreshold || Math.abs(dy) > hudDragThreshold) {
+          hudHasMoved = true;
+        }
+
+        let newLeft = hudStartLeft + dx;
+        let newTop = hudStartTop + dy;
+
+        const screenW = window.innerWidth;
+        const screenH = window.innerHeight;
+
+        // 動態檢查並切換直橫版佈局
+        if (clientX < 100) {
+          if (!hud.classList.contains("vertical")) {
+            hud.classList.add("vertical");
+            const rectHUD = hud.getBoundingClientRect();
+            newLeft = 12;
+            newTop = clientY - rectHUD.height / 2;
+
+            hudStartLeft = newLeft;
+            hudStartTop = newTop;
+            hudDragStartX = clientX;
+            hudDragStartY = clientY;
+          } else {
+            newLeft = 12;
+          }
+        }
+        else if (clientX > screenW - 100) {
+          if (!hud.classList.contains("vertical")) {
+            hud.classList.add("vertical");
+            const rectHUD = hud.getBoundingClientRect();
+            newLeft = screenW - rectHUD.width - 12;
+            newTop = clientY - rectHUD.height / 2;
+
+            hudStartLeft = newLeft;
+            hudStartTop = newTop;
+            hudDragStartX = clientX;
+            hudDragStartY = clientY;
+          } else {
+            const rectHUD = hud.getBoundingClientRect();
+            newLeft = screenW - rectHUD.width - 12;
+          }
+        }
+        else {
+          if (hud.classList.contains("vertical")) {
+            hud.classList.remove("vertical");
+            const rectHUD = hud.getBoundingClientRect();
+            newLeft = clientX - rectHUD.width / 2;
+            newTop = clientY - rectHUD.height / 2;
+
+            hudStartLeft = newLeft;
+            hudStartTop = newTop;
+            hudDragStartX = clientX;
+            hudDragStartY = clientY;
+          }
+        }
+
+        const rectHUD = hud.getBoundingClientRect();
+        newLeft = Math.max(0, Math.min(newLeft, screenW - rectHUD.width));
+        newTop = Math.max(0, Math.min(newTop, screenH - rectHUD.height));
+
+        // 將目標位置寫入平滑插值系統，而非直接寫入 style，創造高端的遲滯滑動特效
+        hudTargetLeft = newLeft;
+        hudTargetTop = newTop;
+
+        if (e.cancelable) e.preventDefault();
+      }
+
+      function endHUDDrag(e) {
+        isHUDDragging = false;
+        hud.classList.remove("dragging");
+
+        if (e.type === "touchend") {
+          document.removeEventListener("touchmove", moveHUDDrag);
+          document.removeEventListener("touchend", endHUDDrag);
+        } else {
+          document.removeEventListener("mousemove", moveHUDDrag);
+          document.removeEventListener("mouseup", endHUDDrag);
+        }
+
+        const screenW = window.innerWidth;
+        const screenH = window.innerHeight;
+        const rectHUD = hud.getBoundingClientRect();
+
+        let finalLeft = hudTargetLeft !== null ? hudTargetLeft : rectHUD.left;
+        let finalTop = hudTargetTop !== null ? hudTargetTop : rectHUD.top;
+
+        if (hud.classList.contains("vertical")) {
+          if (finalLeft < screenW / 2) {
+            finalLeft = 12;
+          } else {
+            finalLeft = screenW - rectHUD.width - 12;
+          }
+          finalTop = Math.max(12, Math.min(finalTop, screenH - rectHUD.height - 12));
+        }
+
+        // 把最安全邊界坐標寫入目標，HUD 將優雅地滑行到該位置貼合，而不是瞬間瞬移
+        hudTargetLeft = finalLeft;
+        hudTargetTop = finalTop;
+
+        if (hudHasMoved) {
+          const preventClickAfterDrag = (evt) => {
+            evt.stopPropagation();
+            evt.preventDefault();
+            document.removeEventListener("click", preventClickAfterDrag, true);
+          };
+          document.addEventListener("click", preventClickAfterDrag, true);
+        } else {
+          // 如果沒有實際拖曳（只是點擊），且點擊的是最小化按鈕，手動觸發切換最小化/展開
+          const clickedBtn = e.target.closest("#minimizeBtn");
+          if (clickedBtn) {
+            ignoreNextClick = true; // 設標記以吸收隨後的原生點擊事件，避免雙擊抵消
+            toggleMinimizeHUD(e);
+          }
+        }
+      }
+    }
+
+    let ignoreNextClick = false;
+
+    function toggleMinimizeHUD(e) {
+      if (ignoreNextClick) {
+        ignoreNextClick = false;
+        return; // 成功吸收並阻斷重複的點擊事件
+      }
+      if (e) e.stopPropagation();
+      if (isHUDMinimized) {
+        expandHUD();
+      } else {
+        minimizeHUD();
+      }
+    }
+    // 啟動簡報
+    window.onload = initPresentation;
+  </script>
+</body>
+
+</html>
+

@@ -1,0 +1,10 @@
+.uv-cache/
+.uv-python/
+official-arag/
+pdf/
+*.log
+Thumbs.db
+.DS_Store
+outputs/.vercel/
+**/node_modules/
+**/.pnpm-store/

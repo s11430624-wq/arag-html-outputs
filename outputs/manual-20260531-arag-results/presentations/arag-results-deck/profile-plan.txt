@@ -1,0 +1,8 @@
+task mode: create
+primary deck-profile: engineering-platform
+secondary profile gates: strategy-leadership
+required proof objects: dataset scope, official repo pipeline, parameter table, main results, efficiency readout, MuSiQue ablation, summary
+source/asset requirements: reuse the visual grammar from a-rag-paper-report-wu-yiming-figure2.pptx; no external brand assets required
+brand authenticity constraints: keep academic/report tone; no invented logos or pseudo-branding
+profile-specific QA gates: table legibility, consistent page chrome, non-overlapping labels, accurate reported numbers
+known missing inputs: no exact editable template inspection via unzip script, so style is matched through rendered deck visual grammar
